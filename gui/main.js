@@ -30,7 +30,7 @@ function fixPath() {
 fixPath();
 
 // ---------------------------------------------------------------------------
-// Paths
+// Paths — detect NanoClaw project root (works from DMG and dev mode)
 // ---------------------------------------------------------------------------
 const HOME = os.homedir();
 const OC_DIR = path.join(HOME, '.openclaw');
@@ -39,7 +39,55 @@ const OC_STORE = path.join(OC_DIR, 'manager-store.json');
 const OC_LOGS_DIR = path.join(OC_DIR, 'logs');
 const OC_CRON_DIR = path.join(OC_DIR, 'cron');
 const OC_CRED_DIR = path.join(OC_DIR, 'credentials');
-const PROJECT_DIR = path.resolve(__dirname, '..');
+
+// Settings file for persistent config (survives reinstalls)
+const SETTINGS_FILE = path.join(HOME, '.config', 'nanoclaw', 'gui-settings.json');
+
+function detectProjectDir() {
+  // 1. Check saved setting
+  try {
+    const settings = JSON.parse(fs.readFileSync(SETTINGS_FILE, 'utf-8'));
+    if (settings.projectDir && fs.existsSync(path.join(settings.projectDir, 'package.json'))) {
+      return settings.projectDir;
+    }
+  } catch {}
+
+  // 2. Dev mode — __dirname is inside gui/, parent has package.json
+  const devCandidate = path.resolve(__dirname, '..');
+  if (fs.existsSync(path.join(devCandidate, 'package.json')) &&
+      fs.existsSync(path.join(devCandidate, 'src', 'index.ts'))) {
+    return devCandidate;
+  }
+
+  // 3. Search known locations
+  const candidates = [
+    path.join(HOME, 'SynologyDrive', 'Nanoclaw'),
+    path.join(HOME, 'nanoclaw'),
+    path.join(HOME, 'Developer', 'Nanoclaw'),
+    path.join(HOME, 'Documents', 'Developer', 'Nanoclaw'),
+    path.join(HOME, 'Projects', 'Nanoclaw'),
+    path.join(HOME, 'Code', 'Nanoclaw'),
+    path.join(HOME, 'Desktop', 'Nanoclaw'),
+  ];
+  for (const dir of candidates) {
+    if (fs.existsSync(path.join(dir, 'package.json')) &&
+        fs.existsSync(path.join(dir, 'src', 'index.ts'))) {
+      return dir;
+    }
+  }
+
+  // 4. Fallback to dev mode path
+  return devCandidate;
+}
+
+let PROJECT_DIR = detectProjectDir();
+
+function saveProjectDir(dir) {
+  PROJECT_DIR = dir;
+  const settingsDir = path.dirname(SETTINGS_FILE);
+  fs.mkdirSync(settingsDir, { recursive: true });
+  fs.writeFileSync(SETTINGS_FILE, JSON.stringify({ projectDir: dir }, null, 2));
+}
 
 // ---------------------------------------------------------------------------
 // JSON helpers (safe read/write)
@@ -507,7 +555,7 @@ ipcMain.handle('oc:open-external', (_, url) => shell.openExternal(url));
 
 // ---- Check what's installed ----
 ipcMain.handle('oc:check-deps', async () => {
-  const checks = {};
+  const checks = { projectDir: PROJECT_DIR };
   // Node
   try {
     checks.node = execSync('node --version', { encoding: 'utf-8', timeout: 3000 }).trim();
@@ -516,58 +564,130 @@ ipcMain.handle('oc:check-deps', async () => {
   try {
     checks.openclaw = execSync('openclaw --version 2>/dev/null || echo ""', { encoding: 'utf-8', timeout: 5000 }).trim();
   } catch { checks.openclaw = null; }
-  // WhatsApp auth
-  checks.whatsappAuth = fs.existsSync(path.join(OC_CRED_DIR, 'whatsapp'))
-    && fs.readdirSync(path.join(OC_CRED_DIR, 'whatsapp')).length > 0;
+  // WhatsApp auth (OpenClaw)
+  try {
+    checks.whatsappAuth = fs.existsSync(path.join(OC_CRED_DIR, 'whatsapp'))
+      && fs.readdirSync(path.join(OC_CRED_DIR, 'whatsapp')).length > 0;
+  } catch { checks.whatsappAuth = false; }
   // Telegram config
   const config = readConfig();
   checks.telegramConfigured = !!(config.channels?.telegram?.botToken);
+  // Also check .env for telegram token
+  try {
+    const envContent = fs.readFileSync(path.join(PROJECT_DIR, '.env'), 'utf-8');
+    if (envContent.includes('TELEGRAM_BOT_TOKEN=') && !envContent.includes('TELEGRAM_BOT_TOKEN=\n')) {
+      checks.telegramConfigured = true;
+    }
+  } catch {}
   // NanoClaw project
   checks.nanoclawProject = fs.existsSync(path.join(PROJECT_DIR, 'package.json'));
   checks.nanoclawBuilt = fs.existsSync(path.join(PROJECT_DIR, 'dist', 'index.js'));
   // NanoClaw WhatsApp auth
   checks.nanoclawWhatsAppAuth = fs.existsSync(path.join(PROJECT_DIR, 'store', 'auth', 'creds.json'));
+  // Ollama
+  try {
+    const result = execSync('curl -sf -m 2 http://127.0.0.1:11434/api/tags', { encoding: 'utf-8', timeout: 3000 });
+    checks.ollamaRunning = true;
+  } catch { checks.ollamaRunning = false; }
 
   return checks;
 });
 
-// ---- NanoClaw service management (alternative to OpenClaw gateway) ----
-let ncProcess = null;
+// ---- Set project directory ----
+ipcMain.handle('oc:set-project-dir', async (_, dir) => {
+  if (dir && fs.existsSync(path.join(dir, 'package.json'))) {
+    saveProjectDir(dir);
+    return { ok: true, projectDir: dir };
+  }
+  return { ok: false, error: 'Invalid directory — no package.json found' };
+});
+
+// ---- NanoClaw service management ----
+const PID_FILE = path.join(HOME, '.config', 'nanoclaw', 'service.pid');
+
+function readPid() {
+  try {
+    const pid = parseInt(fs.readFileSync(PID_FILE, 'utf-8').trim());
+    if (pid && !isNaN(pid)) {
+      // Check if process is alive
+      try { process.kill(pid, 0); return pid; } catch { /* dead */ }
+    }
+  } catch {}
+  return null;
+}
+
+function writePid(pid) {
+  const dir = path.dirname(PID_FILE);
+  fs.mkdirSync(dir, { recursive: true });
+  fs.writeFileSync(PID_FILE, String(pid));
+}
+
+function clearPid() {
+  try { fs.unlinkSync(PID_FILE); } catch {}
+}
+
+function isNCRunning() {
+  // Check PID file first
+  if (readPid()) return true;
+  // Fallback: pgrep
+  try {
+    const ps = execSync(`pgrep -f "node.*dist/index.js"`, { encoding: 'utf-8', timeout: 3000 });
+    return ps.trim().length > 0;
+  } catch { return false; }
+}
 
 ipcMain.handle('nc:start', async () => {
-  // Check if already running
-  try {
-    const ps = execSync('pgrep -f "node dist/index.js"', { encoding: 'utf-8', timeout: 3000 });
-    if (ps.trim()) return { ok: true, already: true };
-  } catch {}
-  ncProcess = spawn('node', ['dist/index.js'], {
-    cwd: PROJECT_DIR,
-    detached: true,
-    stdio: ['ignore', 'pipe', 'pipe'],
-  });
-  // Pipe stdout/stderr to log file
+  if (isNCRunning()) return { ok: true, already: true, pid: readPid(), projectDir: PROJECT_DIR };
+
+  // Ensure built
+  const distIndex = path.join(PROJECT_DIR, 'dist', 'index.js');
+  if (!fs.existsSync(distIndex)) {
+    return { ok: false, error: `dist/index.js not found at ${PROJECT_DIR}. Run Build first.` };
+  }
+
   const logDir = path.join(PROJECT_DIR, 'logs');
   fs.mkdirSync(logDir, { recursive: true });
-  const logStream = fs.createWriteStream(path.join(logDir, 'nanoclaw.log'), { flags: 'a' });
-  ncProcess.stdout.pipe(logStream);
-  ncProcess.stderr.pipe(logStream);
-  ncProcess.unref();
-  return { ok: true, pid: ncProcess.pid };
+  const logPath = path.join(logDir, 'nanoclaw.log');
+
+  const out = fs.openSync(logPath, 'a');
+  const err = fs.openSync(logPath, 'a');
+
+  const child = spawn('node', [distIndex], {
+    cwd: PROJECT_DIR,
+    detached: true,
+    stdio: ['ignore', out, err],
+    env: { ...process.env, NODE_ENV: 'production' },
+  });
+
+  child.unref();
+  writePid(child.pid);
+
+  // Wait a moment and verify it's running
+  await new Promise(r => setTimeout(r, 2000));
+  const alive = isNCRunning();
+  return { ok: alive, pid: child.pid, projectDir: PROJECT_DIR };
 });
 
 ipcMain.handle('nc:stop', async () => {
-  try {
-    execSync('pkill -f "node dist/index.js"', { timeout: 5000 });
-    ncProcess = null;
-    return { ok: true };
-  } catch { return { ok: false }; }
+  const pid = readPid();
+  if (pid) {
+    try { process.kill(pid, 'SIGTERM'); } catch {}
+    clearPid();
+    // Give it a second to die
+    await new Promise(r => setTimeout(r, 1000));
+    // Force kill if still alive
+    try { process.kill(pid, 0); process.kill(pid, 'SIGKILL'); } catch {}
+  }
+  // Also kill any strays
+  try { execSync(`pkill -f "node.*dist/index.js"`, { timeout: 3000 }); } catch {}
+  clearPid();
+  return { ok: true };
 });
 
 ipcMain.handle('nc:status', async () => {
-  try {
-    const ps = execSync('pgrep -f "node dist/index.js"', { encoding: 'utf-8', timeout: 3000 });
-    return { running: ps.trim().length > 0 };
-  } catch { return { running: false }; }
+  const pid = readPid();
+  const running = isNCRunning();
+  return { running, pid, projectDir: PROJECT_DIR };
 });
 
 // ---- NanoClaw .env management ----

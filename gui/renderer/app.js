@@ -69,6 +69,11 @@ const Dashboard = {
       const g = groups.status === 'fulfilled' ? groups.value : {};
       const m = stats.status === 'fulfilled' ? stats.value : {};
 
+      // Update version info with project dir
+      document.getElementById('version-info').textContent = d.projectDir
+        ? 'Project: ' + d.projectDir.split('/').pop()
+        : 'NanoClaw';
+
       // Service status
       const dot = document.getElementById('status-dot');
       const label = document.getElementById('status-label');
@@ -76,12 +81,12 @@ const Dashboard = {
       if (this.ncRunning) {
         dot.className = 'status-dot green'; label.textContent = 'Running';
         document.getElementById('stat-service').textContent = 'Online';
-        document.getElementById('stat-service-sub').textContent = 'Service active';
+        document.getElementById('stat-service-sub').textContent = nc.pid ? `PID ${nc.pid}` : 'Service active';
         btn.textContent = 'Stop'; btn.className = 'btn btn-danger btn-sm';
       } else {
         dot.className = 'status-dot gray'; label.textContent = 'Stopped';
         document.getElementById('stat-service').textContent = 'Offline';
-        document.getElementById('stat-service-sub').textContent = '';
+        document.getElementById('stat-service-sub').textContent = d.nanoclawBuilt ? 'Ready to start' : 'Not built';
         btn.textContent = 'Start'; btn.className = 'btn btn-success btn-sm';
       }
 
@@ -138,13 +143,18 @@ const Dashboard = {
   async toggleNC() {
     const btn = document.getElementById('btn-nc-toggle');
     btn.disabled = true;
+    btn.textContent = this.ncRunning ? 'Stopping...' : 'Starting...';
     try {
       if (this.ncRunning) {
         await window.oc.ncStop();
         toast('Service stopped', 'info');
       } else {
-        await window.oc.ncStart();
-        toast('Service started', 'success');
+        const result = await window.oc.ncStart();
+        if (result.ok) {
+          toast(result.already ? 'Already running' : `Service started (PID ${result.pid})`, 'success');
+        } else {
+          toast('Failed: ' + (result.error || 'unknown error'), 'error');
+        }
       }
     } catch (err) { toast('Error: ' + err.message, 'error'); }
     btn.disabled = false;
@@ -505,6 +515,18 @@ const Settings = {
 
   async openProject() { const p = await window.oc.getPaths(); window.oc.openFolder(p.projectDir); },
   async openOC() { const p = await window.oc.getPaths(); window.oc.openFolder(p.ocDir); },
+
+  async changeProjectDir() {
+    const dir = await window.oc.selectFolder();
+    if (!dir) return;
+    const result = await window.oc.setProjectDir(dir);
+    if (result.ok) {
+      toast('Project directory set to: ' + dir, 'success');
+      this.load();
+    } else {
+      toast(result.error || 'Invalid directory', 'error');
+    }
+  },
 
   async runDoctor() {
     const out = document.getElementById('doctor-output');

@@ -52,6 +52,7 @@ contextBridge.exposeInMainWorld('oc', {
   openExternal: (url) => ipcRenderer.invoke('oc:open-external', url),
   selectFolder: () => ipcRenderer.invoke('oc:select-folder'),
   checkDeps: () => ipcRenderer.invoke('oc:check-deps'),
+  setProjectDir: (dir) => ipcRenderer.invoke('oc:set-project-dir', dir),
 
   // ---- Files ----
   readFile: (filePath) => ipcRenderer.invoke('oc:read-file', { filePath }),
