@@ -70,9 +70,17 @@ contextBridge.exposeInMainWorld('oc', {
   ncTasks: () => ipcRenderer.invoke('nc:tasks'),
   ncMessageStats: () => ipcRenderer.invoke('nc:message-stats'),
 
+  // ---- Ollama ----
+  ollamaStatus: () => ipcRenderer.invoke('ollama:status'),
+  ollamaChat: (model, message) => ipcRenderer.invoke('ollama:chat', { model, message }),
+  ollamaGenerate: (model, prompt) => ipcRenderer.invoke('ollama:generate', { model, prompt }),
+  ollamaConfigure: (model, baseUrl) => ipcRenderer.invoke('ollama:configure', { model, baseUrl }),
+
   // ---- Events ----
   onWhatsAppQR: (cb) => ipcRenderer.on('whatsapp:qr', (_, d) => cb(d)),
   onWhatsAppReady: (cb) => ipcRenderer.on('whatsapp:ready', (_, d) => cb(d)),
+  onWhatsAppFailed: (cb) => ipcRenderer.on('whatsapp:failed', (_, d) => cb(d)),
   offWhatsAppQR: () => ipcRenderer.removeAllListeners('whatsapp:qr'),
   offWhatsAppReady: () => ipcRenderer.removeAllListeners('whatsapp:ready'),
+  offWhatsAppFailed: () => ipcRenderer.removeAllListeners('whatsapp:failed'),
 });

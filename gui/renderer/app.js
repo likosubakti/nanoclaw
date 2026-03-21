@@ -37,6 +37,7 @@ const App = {
       case 'channels': Channels.refresh(); break;
       case 'groups': Groups.refresh(); break;
       case 'automations': Automations.refresh(); break;
+      case 'ollama': Ollama.refresh(); break;
       case 'settings': Settings.load(); break;
       case 'logs': Logs.refresh(); break;
     }
@@ -212,39 +213,52 @@ const Channels = {
 
   async startWhatsAppQR() {
     const container = document.getElementById('wa-qr-container');
+    const qrEl = document.getElementById('wa-qr-code');
+    const statusEl = document.getElementById('wa-qr-status');
     container.classList.remove('hidden');
-    document.getElementById('wa-qr-status').innerHTML = '<div class="spinner"></div> Starting authentication...';
-    document.getElementById('wa-qr-code').textContent = '';
+    statusEl.innerHTML = '<div class="spinner"></div> Starting authentication... this may take a few seconds';
+    qrEl.innerHTML = '';
 
-    // Listen for QR events
+    // Clean up old listeners
     window.oc.offWhatsAppQR();
     window.oc.offWhatsAppReady();
+    window.oc.offWhatsAppFailed();
 
+    // Listen for QR SVG from main process (polled from store/qr-data.txt)
     window.oc.onWhatsAppQR((data) => {
-      document.getElementById('wa-qr-code').textContent = data.qr || '';
-      document.getElementById('wa-qr-status').innerHTML = '<p class="text-secondary">Scan the QR code above with WhatsApp</p>';
+      if (data.svg) {
+        qrEl.innerHTML = data.svg;
+        // Scale SVG nicely
+        const svg = qrEl.querySelector('svg');
+        if (svg) { svg.style.width = '260px'; svg.style.height = '260px'; }
+      } else if (data.raw) {
+        qrEl.textContent = data.raw;
+      }
+      statusEl.innerHTML = '<p class="text-secondary">Open WhatsApp > Settings > Linked Devices > Link a Device<br>Then scan this QR code</p>';
     });
 
     window.oc.onWhatsAppReady(() => {
-      document.getElementById('wa-qr-status').innerHTML = '<p style="color:var(--success);font-weight:600">Authenticated successfully!</p>';
+      statusEl.innerHTML = '<p style="color:var(--success);font-weight:600;font-size:16px">Authenticated successfully!</p>';
       toast('WhatsApp connected', 'success');
-      setTimeout(() => { container.classList.add('hidden'); this.refresh(); }, 2000);
+      setTimeout(() => { container.classList.add('hidden'); this.refresh(); }, 2500);
     });
 
-    // Try NanoClaw WhatsApp auth first (opens browser QR)
+    window.oc.onWhatsAppFailed((data) => {
+      statusEl.innerHTML = `<p style="color:var(--error)">Authentication failed: ${esc(data.reason || 'unknown')}</p>`;
+      toast('WhatsApp auth failed', 'error');
+    });
+
+    // Start auth — main process polls QR file and sends events
     try {
-      const result = await window.oc.ncWhatsAppAuth({ method: 'qr-browser' });
+      const result = await window.oc.ncWhatsAppAuth();
       if (result.ok) {
         toast('WhatsApp authenticated', 'success');
         this.refresh();
       } else if (result.error) {
-        document.getElementById('wa-qr-status').innerHTML = `<p style="color:var(--error)">${esc(result.error)}</p>`;
+        statusEl.innerHTML = `<p style="color:var(--error)">${esc(result.error)}</p>`;
       }
     } catch (err) {
-      // Fallback to OpenClaw method
-      try {
-        await window.oc.channelLoginWhatsApp('main');
-      } catch {}
+      statusEl.innerHTML = `<p style="color:var(--error)">Error: ${esc(err.message)}</p>`;
     }
   },
 
@@ -518,6 +532,85 @@ const Logs = {
       document.getElementById('log-content').textContent = '=== ERROR LOG ===\n\n' + errors;
     } else {
       toast('No error logs found', 'info');
+    }
+  }
+};
+
+// ============================================================
+// OLLAMA
+// ============================================================
+const Ollama = {
+  currentModels: [],
+
+  async refresh() {
+    const status = await window.oc.ollamaStatus();
+    const badge = document.getElementById('ollama-badge');
+    const modelsEl = document.getElementById('ollama-models');
+    const selectEl = document.getElementById('ollama-model');
+
+    if (status.running) {
+      badge.textContent = 'Running';
+      badge.className = 'badge badge-success';
+      this.currentModels = status.models || [];
+
+      if (this.currentModels.length) {
+        let html = '';
+        for (const m of this.currentModels) {
+          const sizeGB = (m.size / 1e9).toFixed(1);
+          const params = m.details?.parameter_size || '';
+          html += `<div class="list-row">
+            <div class="list-row-info">
+              <div class="list-row-title">${esc(m.name)}</div>
+              <div class="list-row-detail">${sizeGB} GB &middot; ${esc(params)} &middot; ${esc(m.details?.quantization_level || '')}</div>
+            </div>
+            <span class="badge badge-success">Available</span>
+          </div>`;
+        }
+        modelsEl.innerHTML = html;
+
+        // Update select options
+        selectEl.innerHTML = '';
+        for (const m of this.currentModels) {
+          const opt = document.createElement('option');
+          opt.value = m.name;
+          opt.textContent = `${m.name} (${m.details?.parameter_size || ''})`;
+          selectEl.appendChild(opt);
+        }
+      } else {
+        modelsEl.innerHTML = '<div class="empty-state"><p>No models found. Pull a model with: ollama pull qwen2.5</p></div>';
+      }
+    } else {
+      badge.textContent = 'Offline';
+      badge.className = 'badge badge-error';
+      modelsEl.innerHTML = '<div class="empty-state"><p>Ollama is not running</p><p class="text-secondary">Start it with: brew services start ollama</p></div>';
+    }
+  },
+
+  async configure() {
+    const model = document.getElementById('ollama-model').value;
+    const url = document.getElementById('ollama-url').value.trim();
+    const result = await window.oc.ollamaConfigure(model, url);
+    if (result.ok) {
+      toast(`Ollama configured: ${model}`, 'success');
+    } else {
+      toast('Failed to configure Ollama', 'error');
+    }
+  },
+
+  async testChat() {
+    const input = document.getElementById('ollama-test-input').value.trim();
+    if (!input) { toast('Enter a message', 'error'); return; }
+
+    const model = document.getElementById('ollama-model').value;
+    const outEl = document.getElementById('ollama-test-output');
+    outEl.classList.remove('hidden');
+    outEl.querySelector('pre').textContent = `Sending to ${model}...`;
+
+    const result = await window.oc.ollamaChat(model, input);
+    if (result.ok) {
+      outEl.querySelector('pre').textContent = result.response;
+    } else {
+      outEl.querySelector('pre').textContent = 'Error: ' + (result.error || 'no response');
     }
   }
 };

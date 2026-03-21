@@ -602,24 +602,92 @@ ipcMain.handle('nc:write-env', (_, data) => {
 });
 
 // ---- NanoClaw WhatsApp auth ----
-ipcMain.handle('nc:whatsapp-auth', async (_, { method }) => {
-  // method: 'qr-browser' | 'qr-terminal' | 'pairing-code'
-  method = method || 'qr-browser';
-  const args = ['tsx', 'setup/index.ts', '--step', 'whatsapp-auth', '--', '--method', method];
+// Spawns the auth script, polls store/qr-data.txt, sends QR SVG to renderer
+ipcMain.handle('nc:whatsapp-auth', async () => {
+  const storeDir = path.join(PROJECT_DIR, 'store');
+  const authDir = path.join(storeDir, 'auth');
+  const qrFile = path.join(storeDir, 'qr-data.txt');
+  const statusFile = path.join(storeDir, 'auth-status.txt');
+
+  // Clean stale state
+  try { fs.unlinkSync(qrFile); } catch {}
+  try { fs.unlinkSync(statusFile); } catch {}
+  fs.mkdirSync(authDir, { recursive: true });
+
+  // Spawn the raw auth script (NOT the setup wrapper — it tries to open a browser)
+  const proc = spawn('npx', ['tsx', 'src/whatsapp-auth.ts'], {
+    cwd: PROJECT_DIR,
+    stdio: ['ignore', 'pipe', 'pipe'],
+  });
+
+  let output = '';
+  proc.stdout.on('data', (d) => { output += d.toString(); });
+  proc.stderr.on('data', (d) => { output += d.toString(); });
+
+  // Poll for QR data file and auth status
+  let resolved = false;
+  const pollInterval = setInterval(async () => {
+    // Check if QR data is available
+    try {
+      if (fs.existsSync(qrFile)) {
+        const qrData = fs.readFileSync(qrFile, 'utf-8').trim();
+        if (qrData) {
+          // Generate SVG from QR data using the qrcode library
+          try {
+            const svg = execSync(
+              `node -e "const QR=require('qrcode');QR.toString('${qrData}',{type:'svg'},(e,s)=>{if(!e)process.stdout.write(s)})"`,
+              { cwd: PROJECT_DIR, encoding: 'utf-8', timeout: 5000 }
+            );
+            mainWindow?.webContents.send('whatsapp:qr', { svg, raw: qrData });
+          } catch {
+            // Fallback: send raw data, renderer can display as text
+            mainWindow?.webContents.send('whatsapp:qr', { raw: qrData });
+          }
+        }
+      }
+    } catch {}
+
+    // Check auth status
+    try {
+      if (fs.existsSync(statusFile)) {
+        const status = fs.readFileSync(statusFile, 'utf-8').trim();
+        if (status === 'authenticated' || status === 'already_authenticated') {
+          clearInterval(pollInterval);
+          if (!resolved) {
+            resolved = true;
+            mainWindow?.webContents.send('whatsapp:ready', {});
+          }
+        } else if (status.startsWith('failed:')) {
+          clearInterval(pollInterval);
+          if (!resolved) {
+            resolved = true;
+            mainWindow?.webContents.send('whatsapp:failed', { reason: status });
+          }
+        }
+      }
+    } catch {}
+  }, 1500);
 
   return new Promise((resolve) => {
-    const proc = spawn('npx', args, { cwd: PROJECT_DIR, timeout: 150000 });
-    let output = '';
-    proc.stdout.on('data', (d) => {
-      const t = d.toString();
-      output += t;
-      if (t.includes('Authenticated') || t.includes('AUTH_STATUS: authenticated')) {
-        mainWindow?.webContents.send('whatsapp:ready', {});
-      }
+    proc.on('close', (code) => {
+      clearInterval(pollInterval);
+      resolved = true;
+      resolve({ ok: code === 0, output });
     });
-    proc.stderr.on('data', (d) => { output += d.toString(); });
-    proc.on('close', (code) => resolve({ ok: code === 0, output }));
-    proc.on('error', (err) => resolve({ ok: false, error: err.message }));
+    proc.on('error', (err) => {
+      clearInterval(pollInterval);
+      resolved = true;
+      resolve({ ok: false, error: err.message });
+    });
+    // Timeout after 2 minutes
+    setTimeout(() => {
+      clearInterval(pollInterval);
+      if (!resolved) {
+        resolved = true;
+        try { proc.kill(); } catch {}
+        resolve({ ok: false, error: 'timeout' });
+      }
+    }, 120000);
   });
 });
 
@@ -698,4 +766,98 @@ ipcMain.handle('oc:select-folder', async () => {
   const result = await dialog.showOpenDialog(mainWindow, { properties: ['openDirectory'] });
   if (result.canceled) return null;
   return result.filePaths[0];
+});
+
+// ===========================================================================
+// OLLAMA INTEGRATION
+// ===========================================================================
+
+ipcMain.handle('ollama:status', async () => {
+  try {
+    const result = await runCmd('curl -sf -m 3 http://127.0.0.1:11434/api/tags', { timeout: 5000 });
+    if (result.ok && result.stdout) {
+      const data = JSON.parse(result.stdout);
+      return { running: true, models: data.models || [] };
+    }
+    return { running: false, models: [] };
+  } catch { return { running: false, models: [] }; }
+});
+
+ipcMain.handle('ollama:chat', async (_, { model, message }) => {
+  // Send a chat message to Ollama
+  const payload = JSON.stringify({ model, messages: [{ role: 'user', content: message }], stream: false });
+  const escaped = payload.replace(/'/g, "'\\''");
+  const result = await runCmd(
+    `curl -sf -m 120 http://127.0.0.1:11434/api/chat -d '${escaped}'`,
+    { timeout: 130000 }
+  );
+  if (result.ok && result.stdout) {
+    try {
+      const data = JSON.parse(result.stdout);
+      return { ok: true, response: data.message?.content || '' };
+    } catch { return { ok: false, error: 'Invalid response' }; }
+  }
+  return { ok: false, error: result.error || 'Ollama not responding' };
+});
+
+ipcMain.handle('ollama:generate', async (_, { model, prompt }) => {
+  const payload = JSON.stringify({ model, prompt, stream: false });
+  const escaped = payload.replace(/'/g, "'\\''");
+  const result = await runCmd(
+    `curl -sf -m 120 http://127.0.0.1:11434/api/generate -d '${escaped}'`,
+    { timeout: 130000 }
+  );
+  if (result.ok && result.stdout) {
+    try {
+      const data = JSON.parse(result.stdout);
+      return { ok: true, response: data.response || '' };
+    } catch { return { ok: false, error: 'Invalid response' }; }
+  }
+  return { ok: false, error: result.error || 'Ollama not responding' };
+});
+
+// Configure NanoClaw to use Ollama as the backend
+ipcMain.handle('ollama:configure', async (_, { model, baseUrl }) => {
+  baseUrl = baseUrl || 'http://127.0.0.1:11434';
+  model = model || 'qwen2.5:latest';
+
+  // Update .env to point to Ollama
+  const envFile = path.join(PROJECT_DIR, '.env');
+  let envContent = '';
+  try { envContent = fs.readFileSync(envFile, 'utf-8'); } catch {}
+
+  // Parse existing env
+  const env = {};
+  for (const line of envContent.split('\n')) {
+    const t = line.trim();
+    if (!t || t.startsWith('#')) continue;
+    const eq = t.indexOf('=');
+    if (eq === -1) continue;
+    env[t.slice(0, eq).trim()] = t.slice(eq + 1).trim();
+  }
+
+  // Set Ollama config — NanoClaw's credential proxy forwards to ANTHROPIC_BASE_URL
+  // For Ollama, we use its OpenAI-compatible endpoint
+  env['OLLAMA_BASE_URL'] = baseUrl;
+  env['OLLAMA_MODEL'] = model;
+
+  const lines = Object.entries(env).map(([k, v]) => `${k}=${v}`);
+  fs.writeFileSync(envFile, lines.join('\n') + '\n', { mode: 0o600 });
+
+  // Sync to container env
+  const envDir = path.join(PROJECT_DIR, 'data', 'env');
+  fs.mkdirSync(envDir, { recursive: true });
+  fs.copyFileSync(envFile, path.join(envDir, 'env'));
+
+  // Also update OpenClaw config to reference the Ollama model
+  const config = readConfig();
+  if (!config.agents) config.agents = {};
+  if (!config.agents.defaults) config.agents.defaults = {};
+  // Store ollama model info
+  if (!config.agents.defaults.ollama) config.agents.defaults.ollama = {};
+  config.agents.defaults.ollama.model = model;
+  config.agents.defaults.ollama.baseUrl = baseUrl;
+  writeConfig(config);
+
+  return { ok: true, model, baseUrl };
 });

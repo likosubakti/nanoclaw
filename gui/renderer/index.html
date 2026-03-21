@@ -39,6 +39,10 @@
         <span class="nav-icon">&#9889;</span>
         <span class="nav-label">Automations</span>
       </a>
+      <a href="#" class="nav-item" data-page="ollama">
+        <span class="nav-icon">&#9883;</span>
+        <span class="nav-label">Ollama</span>
+      </a>
       <div class="nav-divider"></div>
       <a href="#" class="nav-item" data-page="settings">
         <span class="nav-icon">&#9881;</span>
@@ -279,6 +283,63 @@
             <button class="btn btn-primary" onclick="Automations.addJob()">Create</button>
             <button class="btn btn-secondary" onclick="Automations.hideAddModal()">Cancel</button>
           </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ======================= OLLAMA ======================= -->
+    <div class="page" id="page-ollama">
+      <div class="page-header">
+        <h1>Ollama</h1>
+        <div class="page-actions">
+          <button class="btn btn-secondary btn-sm" onclick="Ollama.refresh()">Refresh</button>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-header">
+          <h3>Local AI Models</h3>
+          <span class="badge" id="ollama-badge">Checking...</span>
+        </div>
+        <div class="card-body">
+          <p class="text-secondary mb-4">Use local Ollama models via Telegram. Models run on your machine — no API costs.</p>
+          <div id="ollama-models"></div>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-header"><h3>Configure for Telegram</h3></div>
+        <div class="card-body">
+          <div class="grid-2">
+            <div class="input-group">
+              <label>Model</label>
+              <select class="input-field" id="ollama-model">
+                <option value="qwen2.5:latest">qwen2.5:latest (7.6B)</option>
+                <option value="llama3.1:8b">llama3.1:8b (8.0B)</option>
+                <option value="llama3.2:3b">llama3.2:3b (3.2B)</option>
+                <option value="qwen2.5:7b">qwen2.5:7b (7.6B)</option>
+              </select>
+            </div>
+            <div class="input-group">
+              <label>Ollama URL</label>
+              <input type="text" class="input-field text-mono" id="ollama-url" value="http://127.0.0.1:11434">
+            </div>
+          </div>
+          <button class="btn btn-primary" onclick="Ollama.configure()">Save &amp; Connect</button>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-header"><h3>Test Chat</h3></div>
+        <div class="card-body">
+          <div class="input-group">
+            <label>Message</label>
+            <div class="input-row">
+              <input type="text" class="input-field" id="ollama-test-input" placeholder="Hello, what can you do?">
+              <button class="btn btn-primary" onclick="Ollama.testChat()">Send</button>
+            </div>
+          </div>
+          <div id="ollama-test-output" class="diagnostic-output hidden"><pre></pre></div>
         </div>
       </div>
     </div>
