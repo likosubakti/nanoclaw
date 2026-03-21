@@ -508,11 +508,16 @@ ipcMain.handle('oc:doctor', async () => {
   return result.stdout || result.stderr || 'Doctor command not available.';
 });
 
-// ---- Message send ----
+// ---- Message send (uses spawn to avoid injection) ----
 ipcMain.handle('oc:message-send', async (_, { channel, target, message }) => {
-  const escaped = message.replace(/'/g, "'\\''");
-  const result = await runCmd(`openclaw message send --channel ${channel} --target '${target}' --body '${escaped}'`, { timeout: 15000 });
-  return result;
+  return new Promise((resolve) => {
+    const proc = spawn('openclaw', ['message', 'send', '--channel', String(channel), '--target', String(target), '--body', String(message)], { timeout: 15000 });
+    let stdout = '', stderr = '';
+    proc.stdout.on('data', d => { stdout += d; });
+    proc.stderr.on('data', d => { stderr += d; });
+    proc.on('close', code => resolve({ ok: code === 0, stdout, stderr }));
+    proc.on('error', err => resolve({ ok: false, error: err.message }));
+  });
 });
 
 // ---- Skills ----
@@ -752,11 +757,11 @@ ipcMain.handle('nc:whatsapp-auth', async () => {
       if (fs.existsSync(qrFile)) {
         const qrData = fs.readFileSync(qrFile, 'utf-8').trim();
         if (qrData) {
-          // Generate SVG from QR data using the qrcode library
+          // Generate SVG from QR data using the qrcode library (safe: data passed via env var)
           try {
             const svg = execSync(
-              `node -e "const QR=require('qrcode');QR.toString('${qrData}',{type:'svg'},(e,s)=>{if(!e)process.stdout.write(s)})"`,
-              { cwd: PROJECT_DIR, encoding: 'utf-8', timeout: 5000 }
+              `node -e "const QR=require('qrcode');QR.toString(process.env.QR_DATA,{type:'svg'},(e,s)=>{if(!e)process.stdout.write(s)})"`,
+              { cwd: PROJECT_DIR, encoding: 'utf-8', timeout: 5000, env: { ...process.env, QR_DATA: qrData } }
             );
             mainWindow?.webContents.send('whatsapp:qr', { svg, raw: qrData });
           } catch {
@@ -811,21 +816,27 @@ ipcMain.handle('nc:whatsapp-auth', async () => {
   });
 });
 
-// ---- NanoClaw group registration ----
+// ---- NanoClaw group registration (uses spawn to avoid injection) ----
 ipcMain.handle('nc:register-group', async (_, opts) => {
   const args = [
     'tsx', 'setup/index.ts', '--step', 'register',
-    '--', '--jid', opts.jid,
-    '--name', opts.name,
-    '--folder', opts.folder,
-    '--trigger', opts.trigger || '@Andy',
-    '--channel', opts.channel || 'whatsapp',
+    '--', '--jid', String(opts.jid),
+    '--name', String(opts.name),
+    '--folder', String(opts.folder),
+    '--trigger', String(opts.trigger || '@Andy'),
+    '--channel', String(opts.channel || 'whatsapp'),
   ];
   if (opts.isMain) args.push('--is-main', '--no-trigger-required');
-  if (opts.assistantName) args.push('--assistant-name', opts.assistantName);
+  if (opts.assistantName) args.push('--assistant-name', String(opts.assistantName));
 
-  const result = await runCmd(`cd "${PROJECT_DIR}" && npx ${args.join(' ')}`, { timeout: 15000 });
-  return result;
+  return new Promise((resolve) => {
+    const proc = spawn('npx', args, { cwd: PROJECT_DIR, timeout: 15000 });
+    let stdout = '', stderr = '';
+    proc.stdout.on('data', d => { stdout += d; });
+    proc.stderr.on('data', d => { stderr += d; });
+    proc.on('close', code => resolve({ ok: code === 0, stdout, stderr }));
+    proc.on('error', err => resolve({ ok: false, error: err.message }));
+  });
 });
 
 // ---- NanoClaw groups from DB ----

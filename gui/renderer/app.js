@@ -403,29 +403,37 @@ const Automations = {
     const channel = document.getElementById('cron-channel').value;
     const target = document.getElementById('cron-target').value.trim();
     if (!name || !schedule || !prompt) { toast('Fill in all required fields', 'error'); return; }
-    await window.oc.cronAdd({ name, schedule, prompt, channel, target });
-    toast('Job created', 'success');
-    this.hideAddModal();
-    this.refresh();
+    try {
+      await window.oc.cronAdd({ name, schedule, prompt, channel, target });
+      toast('Job created', 'success');
+      this.hideAddModal();
+      this.refresh();
+    } catch (err) { toast('Failed to create job: ' + err.message, 'error'); }
   },
 
   async toggleJob(name, enabled) {
-    await window.oc.cronToggle(name, enabled);
-    toast(enabled ? 'Job enabled' : 'Job disabled', 'info');
+    try {
+      await window.oc.cronToggle(name, enabled);
+      toast(enabled ? 'Job enabled' : 'Job disabled', 'info');
+    } catch (err) { toast('Toggle failed: ' + err.message, 'error'); }
   },
 
   async runJob(name) {
-    toast('Running job...', 'info');
-    const result = await window.oc.cronRun(name);
-    if (result.ok) toast('Job ran successfully', 'success');
-    else toast('Job failed', 'error');
+    try {
+      toast('Running job...', 'info');
+      const result = await window.oc.cronRun(name);
+      if (result.ok) toast('Job ran successfully', 'success');
+      else toast('Job failed', 'error');
+    } catch (err) { toast('Run failed: ' + err.message, 'error'); }
   },
 
   async removeJob(name) {
     if (!confirm(`Delete job "${name}"?`)) return;
-    await window.oc.cronRemove(name);
-    toast('Job removed', 'info');
-    this.refresh();
+    try {
+      await window.oc.cronRemove(name);
+      toast('Job removed', 'info');
+      this.refresh();
+    } catch (err) { toast('Remove failed: ' + err.message, 'error'); }
   }
 };
 
@@ -464,53 +472,61 @@ const Settings = {
   },
 
   async save() {
-    // Save NanoClaw .env
-    const env = await window.oc.ncReadEnv();
-    const name = document.getElementById('cfg-name').value.trim();
-    if (name) env.ASSISTANT_NAME = name;
-    const apiKey = document.getElementById('cfg-anthropic-key').value.trim();
-    if (apiKey) env.ANTHROPIC_API_KEY = apiKey;
-    await window.oc.ncWriteEnv(env);
+    try {
+      const env = await window.oc.ncReadEnv();
+      const name = document.getElementById('cfg-name').value.trim();
+      if (name) env.ASSISTANT_NAME = name;
+      const apiKey = document.getElementById('cfg-anthropic-key').value.trim();
+      if (apiKey) env.ANTHROPIC_API_KEY = apiKey;
+      await window.oc.ncWriteEnv(env);
 
-    // Save OpenClaw config model
-    const model = document.getElementById('cfg-model').value;
-    await window.oc.configPatch({ agents: { defaults: { model } } });
+      const model = document.getElementById('cfg-model').value;
+      await window.oc.configPatch({ agents: { defaults: { model } } });
 
-    // Save API keys to store
-    if (apiKey) await window.oc.storeSet('key_anthropic', apiKey);
-    const openaiKey = document.getElementById('cfg-openai-key').value.trim();
-    if (openaiKey) await window.oc.storeSet('api_key', openaiKey);
+      if (apiKey) await window.oc.storeSet('key_anthropic', apiKey);
+      const openaiKey = document.getElementById('cfg-openai-key').value.trim();
+      if (openaiKey) await window.oc.storeSet('api_key', openaiKey);
 
-    toast('Settings saved', 'success');
+      toast('Settings saved', 'success');
+    } catch (err) { toast('Save failed: ' + err.message, 'error'); }
   },
 
   async buildNC() {
-    toast('Building NanoClaw...', 'info');
-    const result = await window.oc.ncBuild();
-    if (result.ok) toast('Build successful', 'success');
-    else toast('Build failed: ' + (result.stderr || '').slice(0, 100), 'error');
+    try {
+      toast('Building NanoClaw...', 'info');
+      const result = await window.oc.ncBuild();
+      if (result.ok) toast('Build successful', 'success');
+      else toast('Build failed: ' + (result.stderr || result.error || '').slice(0, 100), 'error');
+    } catch (err) { toast('Build error: ' + err.message, 'error'); }
   },
 
   async restartNC() {
-    await window.oc.ncStop();
-    await new Promise(r => setTimeout(r, 1000));
-    await window.oc.ncStart();
-    toast('Service restarted', 'success');
-    setTimeout(() => Dashboard.refresh(), 1500);
+    try {
+      await window.oc.ncStop();
+      await new Promise(r => setTimeout(r, 1000));
+      const result = await window.oc.ncStart();
+      if (result.ok) toast('Service restarted', 'success');
+      else toast('Restart failed: ' + (result.error || ''), 'error');
+      setTimeout(() => Dashboard.refresh(), 1500);
+    } catch (err) { toast('Restart error: ' + err.message, 'error'); }
   },
 
   async startGW() {
-    toast('Starting gateway...', 'info');
-    const result = await window.oc.gatewayStart();
-    if (result.ok) toast('Gateway started', 'success');
-    else toast('Failed to start gateway', 'error');
-    this.load();
+    try {
+      toast('Starting gateway...', 'info');
+      const result = await window.oc.gatewayStart();
+      if (result.ok) toast('Gateway started', 'success');
+      else toast('Failed to start gateway', 'error');
+      this.load();
+    } catch (err) { toast('Gateway error: ' + err.message, 'error'); }
   },
 
   async stopGW() {
-    await window.oc.gatewayStop();
-    toast('Gateway stopped', 'info');
-    this.load();
+    try {
+      await window.oc.gatewayStop();
+      toast('Gateway stopped', 'info');
+      this.load();
+    } catch (err) { toast('Gateway error: ' + err.message, 'error'); }
   },
 
   async openProject() { const p = await window.oc.getPaths(); window.oc.openFolder(p.projectDir); },
@@ -542,19 +558,25 @@ const Settings = {
 // ============================================================
 const Logs = {
   async refresh() {
-    const content = await window.oc.logs(300);
-    document.getElementById('log-content').textContent = content || 'No logs available';
-    const viewer = document.getElementById('log-viewer');
-    viewer.scrollTop = viewer.scrollHeight;
+    try {
+      const content = await window.oc.logs(300);
+      document.getElementById('log-content').textContent = content || 'No logs available';
+      const viewer = document.getElementById('log-viewer');
+      viewer.scrollTop = viewer.scrollHeight;
+    } catch (err) {
+      document.getElementById('log-content').textContent = 'Failed to load logs: ' + err.message;
+    }
   },
 
   async showErrors() {
-    const errors = await window.oc.logsError();
-    if (errors) {
-      document.getElementById('log-content').textContent = '=== ERROR LOG ===\n\n' + errors;
-    } else {
-      toast('No error logs found', 'info');
-    }
+    try {
+      const errors = await window.oc.logsError();
+      if (errors) {
+        document.getElementById('log-content').textContent = '=== ERROR LOG ===\n\n' + errors;
+      } else {
+        toast('No error logs found', 'info');
+      }
+    } catch (err) { toast('Failed to load errors: ' + err.message, 'error'); }
   }
 };
 
@@ -609,14 +631,13 @@ const Ollama = {
   },
 
   async configure() {
-    const model = document.getElementById('ollama-model').value;
-    const url = document.getElementById('ollama-url').value.trim();
-    const result = await window.oc.ollamaConfigure(model, url);
-    if (result.ok) {
-      toast(`Ollama configured: ${model}`, 'success');
-    } else {
-      toast('Failed to configure Ollama', 'error');
-    }
+    try {
+      const model = document.getElementById('ollama-model').value;
+      const url = document.getElementById('ollama-url').value.trim();
+      const result = await window.oc.ollamaConfigure(model, url);
+      if (result.ok) toast(`Ollama configured: ${model}`, 'success');
+      else toast('Failed to configure Ollama', 'error');
+    } catch (err) { toast('Configure error: ' + err.message, 'error'); }
   },
 
   async testChat() {
@@ -628,11 +649,12 @@ const Ollama = {
     outEl.classList.remove('hidden');
     outEl.querySelector('pre').textContent = `Sending to ${model}...`;
 
-    const result = await window.oc.ollamaChat(model, input);
-    if (result.ok) {
-      outEl.querySelector('pre').textContent = result.response;
-    } else {
-      outEl.querySelector('pre').textContent = 'Error: ' + (result.error || 'no response');
+    try {
+      const result = await window.oc.ollamaChat(model, input);
+      if (result.ok) outEl.querySelector('pre').textContent = result.response;
+      else outEl.querySelector('pre').textContent = 'Error: ' + (result.error || 'no response');
+    } catch (err) {
+      outEl.querySelector('pre').textContent = 'Error: ' + err.message;
     }
   }
 };
