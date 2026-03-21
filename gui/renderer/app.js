@@ -1,0 +1,532 @@
+// ============================================================
+// NanoClaw Manager — Application Logic
+// All operations via GUI — no CLI needed
+// ============================================================
+
+function esc(s) {
+  if (!s) return '';
+  return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+function toast(msg, type = 'info', duration = 3500) {
+  const c = document.getElementById('toast-container');
+  const el = document.createElement('div');
+  el.className = `toast toast-${type}`;
+  el.innerHTML = `<span>${esc(msg)}</span>`;
+  c.appendChild(el);
+  requestAnimationFrame(() => el.classList.add('show'));
+  setTimeout(() => { el.classList.remove('show'); setTimeout(() => el.remove(), 300); }, duration);
+}
+
+// ---- Navigation ----
+const App = {
+  currentPage: 'dashboard',
+  navigate(page) {
+    document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
+    document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
+    const pageEl = document.getElementById(`page-${page}`);
+    const navEl = document.querySelector(`[data-page="${page}"]`);
+    if (pageEl) pageEl.classList.add('active');
+    if (navEl) navEl.classList.add('active');
+    this.currentPage = page;
+    this.onPageEnter(page);
+  },
+  onPageEnter(page) {
+    switch (page) {
+      case 'dashboard': Dashboard.refresh(); break;
+      case 'channels': Channels.refresh(); break;
+      case 'groups': Groups.refresh(); break;
+      case 'automations': Automations.refresh(); break;
+      case 'settings': Settings.load(); break;
+      case 'logs': Logs.refresh(); break;
+    }
+  }
+};
+
+document.querySelectorAll('.nav-item').forEach(item => {
+  item.addEventListener('click', (e) => { e.preventDefault(); App.navigate(item.dataset.page); });
+});
+
+// ============================================================
+// DASHBOARD
+// ============================================================
+const Dashboard = {
+  ncRunning: false,
+
+  async refresh() {
+    try {
+      const [ncStatus, deps, groups, stats] = await Promise.allSettled([
+        window.oc.ncStatus(),
+        window.oc.checkDeps(),
+        window.oc.ncGroups(),
+        window.oc.ncMessageStats(),
+      ]);
+
+      const nc = ncStatus.status === 'fulfilled' ? ncStatus.value : {};
+      this.ncRunning = nc.running || false;
+      const d = deps.status === 'fulfilled' ? deps.value : {};
+      const g = groups.status === 'fulfilled' ? groups.value : {};
+      const m = stats.status === 'fulfilled' ? stats.value : {};
+
+      // Service status
+      const dot = document.getElementById('status-dot');
+      const label = document.getElementById('status-label');
+      const btn = document.getElementById('btn-nc-toggle');
+      if (this.ncRunning) {
+        dot.className = 'status-dot green'; label.textContent = 'Running';
+        document.getElementById('stat-service').textContent = 'Online';
+        document.getElementById('stat-service-sub').textContent = 'Service active';
+        btn.textContent = 'Stop'; btn.className = 'btn btn-danger btn-sm';
+      } else {
+        dot.className = 'status-dot gray'; label.textContent = 'Stopped';
+        document.getElementById('stat-service').textContent = 'Offline';
+        document.getElementById('stat-service-sub').textContent = '';
+        btn.textContent = 'Start'; btn.className = 'btn btn-success btn-sm';
+      }
+
+      // Channels count
+      let chCount = 0;
+      if (d.telegramConfigured) chCount++;
+      if (d.nanoclawWhatsAppAuth || d.whatsappAuth) chCount++;
+      document.getElementById('stat-channels').textContent = chCount;
+
+      // Groups
+      const groupCount = Object.keys(g).length;
+      document.getElementById('stat-groups').textContent = groupCount;
+
+      // Messages
+      document.getElementById('stat-messages').textContent = m.total || 0;
+      document.getElementById('stat-messages-sub').textContent = m.today ? `${m.today} today` : 'total';
+
+      // Channels card
+      this.renderChannels(d);
+      // Groups card
+      this.renderGroups(g);
+
+    } catch (err) { console.error('Dashboard error:', err); }
+  },
+
+  renderChannels(deps) {
+    const el = document.getElementById('dash-channels');
+    let html = '';
+    if (deps.telegramConfigured) {
+      html += `<div class="list-row"><div class="list-row-info"><div class="list-row-title"><span class="channel-badge telegram" style="margin-right:6px">T</span>Telegram</div><div class="list-row-detail">Bot configured</div></div><span class="badge badge-success">Active</span></div>`;
+    }
+    if (deps.nanoclawWhatsAppAuth || deps.whatsappAuth) {
+      html += `<div class="list-row"><div class="list-row-info"><div class="list-row-title"><span class="channel-badge whatsapp" style="margin-right:6px">W</span>WhatsApp</div><div class="list-row-detail">Linked device</div></div><span class="badge badge-success">Active</span></div>`;
+    }
+    if (!html) html = '<div class="empty-state"><p>No channels configured yet</p><p class="text-secondary">Go to Channels to set up Telegram or WhatsApp</p></div>';
+    el.innerHTML = html;
+  },
+
+  renderGroups(groups) {
+    const el = document.getElementById('dash-groups');
+    const entries = Object.entries(groups);
+    if (!entries.length) {
+      el.innerHTML = '<div class="empty-state"><p>No groups registered</p></div>';
+      return;
+    }
+    let html = '';
+    for (const [jid, g] of entries.slice(0, 6)) {
+      const ch = jid.startsWith('tg:') ? 'Telegram' : 'WhatsApp';
+      html += `<div class="list-row"><div class="list-row-info"><div class="list-row-title">${esc(g.name || jid)}</div><div class="list-row-detail">${ch} &middot; ${esc(g.folder || '')}</div></div>${g.isMain ? '<span class="badge badge-success">Main</span>' : '<span class="badge">Group</span>'}</div>`;
+    }
+    el.innerHTML = html;
+  },
+
+  async toggleNC() {
+    const btn = document.getElementById('btn-nc-toggle');
+    btn.disabled = true;
+    try {
+      if (this.ncRunning) {
+        await window.oc.ncStop();
+        toast('Service stopped', 'info');
+      } else {
+        await window.oc.ncStart();
+        toast('Service started', 'success');
+      }
+    } catch (err) { toast('Error: ' + err.message, 'error'); }
+    btn.disabled = false;
+    setTimeout(() => this.refresh(), 1500);
+  }
+};
+
+// ============================================================
+// CHANNELS
+// ============================================================
+const Channels = {
+  async refresh() {
+    const deps = await window.oc.checkDeps();
+    const config = await window.oc.configRead();
+
+    // Telegram
+    const tgToken = config?.channels?.telegram?.botToken || '';
+    const tgBadge = document.getElementById('tg-badge');
+    if (tgToken || deps.telegramConfigured) {
+      tgBadge.textContent = 'Connected';
+      tgBadge.className = 'badge badge-success';
+      document.getElementById('tg-token').value = tgToken;
+      document.getElementById('tg-status').innerHTML = '<p class="text-secondary mt-4">Telegram bot is configured and active.</p>';
+    } else {
+      tgBadge.textContent = 'Not configured';
+      tgBadge.className = 'badge';
+      document.getElementById('tg-status').innerHTML = '';
+    }
+
+    // WhatsApp
+    const waBadge = document.getElementById('wa-badge');
+    if (deps.nanoclawWhatsAppAuth || deps.whatsappAuth) {
+      waBadge.textContent = 'Connected';
+      waBadge.className = 'badge badge-success';
+      document.getElementById('btn-wa-qr').textContent = 'Re-authenticate';
+      document.getElementById('btn-wa-remove').style.display = '';
+      document.getElementById('wa-status').innerHTML = '<p class="text-secondary mt-4">WhatsApp is linked and authenticated.</p>';
+    } else {
+      waBadge.textContent = 'Not configured';
+      waBadge.className = 'badge';
+      document.getElementById('btn-wa-remove').style.display = 'none';
+      document.getElementById('wa-status').innerHTML = '';
+    }
+  },
+
+  async saveTelegram() {
+    const token = document.getElementById('tg-token').value.trim();
+    if (!token) { toast('Enter a bot token', 'error'); return; }
+
+    const btn = document.getElementById('btn-tg-save');
+    btn.disabled = true; btn.textContent = 'Saving...';
+
+    try {
+      // Save to OpenClaw config
+      await window.oc.channelAddTelegram(token, 'main');
+      // Also save to NanoClaw .env
+      const env = await window.oc.ncReadEnv();
+      env.TELEGRAM_BOT_TOKEN = token;
+      await window.oc.ncWriteEnv(env);
+      toast('Telegram connected', 'success');
+      this.refresh();
+    } catch (err) { toast('Error: ' + err.message, 'error'); }
+
+    btn.disabled = false; btn.textContent = 'Save & Connect';
+  },
+
+  async startWhatsAppQR() {
+    const container = document.getElementById('wa-qr-container');
+    container.classList.remove('hidden');
+    document.getElementById('wa-qr-status').innerHTML = '<div class="spinner"></div> Starting authentication...';
+    document.getElementById('wa-qr-code').textContent = '';
+
+    // Listen for QR events
+    window.oc.offWhatsAppQR();
+    window.oc.offWhatsAppReady();
+
+    window.oc.onWhatsAppQR((data) => {
+      document.getElementById('wa-qr-code').textContent = data.qr || '';
+      document.getElementById('wa-qr-status').innerHTML = '<p class="text-secondary">Scan the QR code above with WhatsApp</p>';
+    });
+
+    window.oc.onWhatsAppReady(() => {
+      document.getElementById('wa-qr-status').innerHTML = '<p style="color:var(--success);font-weight:600">Authenticated successfully!</p>';
+      toast('WhatsApp connected', 'success');
+      setTimeout(() => { container.classList.add('hidden'); this.refresh(); }, 2000);
+    });
+
+    // Try NanoClaw WhatsApp auth first (opens browser QR)
+    try {
+      const result = await window.oc.ncWhatsAppAuth({ method: 'qr-browser' });
+      if (result.ok) {
+        toast('WhatsApp authenticated', 'success');
+        this.refresh();
+      } else if (result.error) {
+        document.getElementById('wa-qr-status').innerHTML = `<p style="color:var(--error)">${esc(result.error)}</p>`;
+      }
+    } catch (err) {
+      // Fallback to OpenClaw method
+      try {
+        await window.oc.channelLoginWhatsApp('main');
+      } catch {}
+    }
+  },
+
+  async removeWhatsApp() {
+    if (!confirm('Disconnect WhatsApp?')) return;
+    await window.oc.channelRemove('whatsapp', 'main');
+    toast('WhatsApp disconnected', 'info');
+    this.refresh();
+  }
+};
+
+// ============================================================
+// GROUPS
+// ============================================================
+const Groups = {
+  async refresh() {
+    const groups = await window.oc.ncGroups();
+    const el = document.getElementById('groups-list');
+    const entries = Object.entries(groups);
+    if (!entries.length) {
+      el.innerHTML = '<div class="empty-state"><span class="empty-icon">&#9783;</span><p>No groups registered</p><p class="text-secondary">Click "Add Group" to register a chat</p></div>';
+      return;
+    }
+    let html = '';
+    for (const [jid, g] of entries) {
+      const ch = jid.startsWith('tg:') ? 'Telegram' : jid.includes('@g.us') ? 'WhatsApp Group' : 'WhatsApp DM';
+      html += `<div class="list-row">
+        <div class="list-row-info">
+          <div class="list-row-title">${esc(g.name || 'Unnamed')}</div>
+          <div class="list-row-detail list-row-mono">${esc(jid)} &middot; ${ch} &middot; ${esc(g.folder || '')}</div>
+        </div>
+        <div class="list-row-actions">
+          ${g.isMain ? '<span class="badge badge-success">Main</span>' : ''}
+          ${g.requiresTrigger === false ? '<span class="badge">No trigger</span>' : ''}
+        </div>
+      </div>`;
+    }
+    el.innerHTML = html;
+  },
+
+  showAddModal() {
+    document.getElementById('add-group-card').classList.remove('hidden');
+    // Pre-fill trigger from env
+    window.oc.ncReadEnv().then(env => {
+      document.getElementById('grp-trigger').value = '@' + (env.ASSISTANT_NAME || 'Andy');
+    });
+  },
+
+  hideAddModal() { document.getElementById('add-group-card').classList.add('hidden'); },
+
+  async registerGroup() {
+    const jid = document.getElementById('grp-jid').value.trim();
+    const name = document.getElementById('grp-name').value.trim();
+    const folder = document.getElementById('grp-folder').value.trim();
+    const channel = document.getElementById('grp-channel').value;
+    const trigger = document.getElementById('grp-trigger').value.trim();
+    const isMain = document.getElementById('grp-is-main').checked;
+
+    if (!jid || !name || !folder) { toast('Fill in JID, name, and folder', 'error'); return; }
+
+    const env = await window.oc.ncReadEnv();
+    const result = await window.oc.ncRegisterGroup({
+      jid, name, folder, channel, trigger, isMain,
+      assistantName: env.ASSISTANT_NAME || 'Andy'
+    });
+
+    if (result.ok) {
+      toast('Group registered', 'success');
+      this.hideAddModal();
+      this.refresh();
+    } else {
+      toast('Error: ' + (result.error || result.stderr || 'Registration failed'), 'error');
+    }
+  }
+};
+
+// ============================================================
+// AUTOMATIONS
+// ============================================================
+const Automations = {
+  async refresh() {
+    // Cron jobs
+    const jobs = await window.oc.cronList();
+    const el = document.getElementById('cron-list');
+    if (!jobs || !jobs.length) {
+      el.innerHTML = '<div class="empty-state"><span class="empty-icon">&#9889;</span><p>No cron jobs</p></div>';
+    } else {
+      let html = '';
+      for (const job of jobs) {
+        html += `<div class="list-row">
+          <div class="list-row-info">
+            <div class="list-row-title">${esc(job.name)}</div>
+            <div class="list-row-detail list-row-mono">${esc(job.schedule)} &middot; ${esc(job.prompt || '').slice(0, 80)}</div>
+          </div>
+          <div class="list-row-actions">
+            <label class="toggle-switch"><input type="checkbox" ${job.enabled ? 'checked' : ''} onchange="Automations.toggleJob('${esc(job.name)}', this.checked)"><span class="toggle-slider"></span></label>
+            <button class="btn btn-sm btn-secondary" onclick="Automations.runJob('${esc(job.name)}')">Run</button>
+            <button class="btn btn-sm btn-danger" onclick="Automations.removeJob('${esc(job.name)}')">Remove</button>
+          </div>
+        </div>`;
+      }
+      el.innerHTML = html;
+    }
+
+    // Scheduled tasks from DB
+    const tasks = await window.oc.ncTasks();
+    const tel = document.getElementById('tasks-list');
+    if (!tasks || !tasks.length) {
+      tel.innerHTML = '<div class="empty-state"><p>No tasks scheduled by the assistant yet</p></div>';
+    } else {
+      let html = '';
+      for (const t of tasks) {
+        html += `<div class="list-row">
+          <div class="list-row-info">
+            <div class="list-row-title">${esc(t.prompt || '').slice(0, 100)}</div>
+            <div class="list-row-detail list-row-mono">${esc(t.schedule_type)}: ${esc(t.schedule_value)} &middot; ${esc(t.status)} &middot; next: ${esc(t.next_run || '--')}</div>
+          </div>
+          <span class="badge ${t.status === 'active' ? 'badge-success' : ''}">${esc(t.status)}</span>
+        </div>`;
+      }
+      tel.innerHTML = html;
+    }
+  },
+
+  showAddModal() { document.getElementById('add-cron-card').classList.remove('hidden'); },
+  hideAddModal() { document.getElementById('add-cron-card').classList.add('hidden'); },
+
+  async addJob() {
+    const name = document.getElementById('cron-name').value.trim();
+    const schedule = document.getElementById('cron-schedule').value.trim();
+    const prompt = document.getElementById('cron-prompt').value.trim();
+    const channel = document.getElementById('cron-channel').value;
+    const target = document.getElementById('cron-target').value.trim();
+    if (!name || !schedule || !prompt) { toast('Fill in all required fields', 'error'); return; }
+    await window.oc.cronAdd({ name, schedule, prompt, channel, target });
+    toast('Job created', 'success');
+    this.hideAddModal();
+    this.refresh();
+  },
+
+  async toggleJob(name, enabled) {
+    await window.oc.cronToggle(name, enabled);
+    toast(enabled ? 'Job enabled' : 'Job disabled', 'info');
+  },
+
+  async runJob(name) {
+    toast('Running job...', 'info');
+    const result = await window.oc.cronRun(name);
+    if (result.ok) toast('Job ran successfully', 'success');
+    else toast('Job failed', 'error');
+  },
+
+  async removeJob(name) {
+    if (!confirm(`Delete job "${name}"?`)) return;
+    await window.oc.cronRemove(name);
+    toast('Job removed', 'info');
+    this.refresh();
+  }
+};
+
+// ============================================================
+// SETTINGS
+// ============================================================
+const Settings = {
+  async load() {
+    const [env, config, deps, paths] = await Promise.all([
+      window.oc.ncReadEnv(),
+      window.oc.configRead(),
+      window.oc.checkDeps(),
+      window.oc.getPaths(),
+    ]);
+
+    // Assistant
+    document.getElementById('cfg-name').value = env.ASSISTANT_NAME || 'Andy';
+    const model = config?.agents?.defaults?.model || 'anthropic/claude-sonnet-4-6';
+    document.getElementById('cfg-model').value = model;
+
+    // API keys from store
+    const storeData = await window.oc.storeGetAll();
+    document.getElementById('cfg-anthropic-key').value = env.ANTHROPIC_API_KEY || storeData.key_anthropic || '';
+    document.getElementById('cfg-openai-key').value = storeData.api_key || '';
+
+    // Service info
+    const ncStatus = await window.oc.ncStatus();
+    document.getElementById('nc-service-info').textContent = ncStatus.running ? 'Running' : 'Stopped';
+
+    const gwHealth = await window.oc.gatewayHealth();
+    document.getElementById('oc-gw-info').textContent = gwHealth.running ? `Running on port ${gwHealth.port}` : 'Stopped';
+
+    // Paths
+    document.getElementById('path-project').textContent = paths.projectDir || '--';
+    document.getElementById('path-oc').textContent = paths.ocDir || '--';
+  },
+
+  async save() {
+    // Save NanoClaw .env
+    const env = await window.oc.ncReadEnv();
+    const name = document.getElementById('cfg-name').value.trim();
+    if (name) env.ASSISTANT_NAME = name;
+    const apiKey = document.getElementById('cfg-anthropic-key').value.trim();
+    if (apiKey) env.ANTHROPIC_API_KEY = apiKey;
+    await window.oc.ncWriteEnv(env);
+
+    // Save OpenClaw config model
+    const model = document.getElementById('cfg-model').value;
+    await window.oc.configPatch({ agents: { defaults: { model } } });
+
+    // Save API keys to store
+    if (apiKey) await window.oc.storeSet('key_anthropic', apiKey);
+    const openaiKey = document.getElementById('cfg-openai-key').value.trim();
+    if (openaiKey) await window.oc.storeSet('api_key', openaiKey);
+
+    toast('Settings saved', 'success');
+  },
+
+  async buildNC() {
+    toast('Building NanoClaw...', 'info');
+    const result = await window.oc.ncBuild();
+    if (result.ok) toast('Build successful', 'success');
+    else toast('Build failed: ' + (result.stderr || '').slice(0, 100), 'error');
+  },
+
+  async restartNC() {
+    await window.oc.ncStop();
+    await new Promise(r => setTimeout(r, 1000));
+    await window.oc.ncStart();
+    toast('Service restarted', 'success');
+    setTimeout(() => Dashboard.refresh(), 1500);
+  },
+
+  async startGW() {
+    toast('Starting gateway...', 'info');
+    const result = await window.oc.gatewayStart();
+    if (result.ok) toast('Gateway started', 'success');
+    else toast('Failed to start gateway', 'error');
+    this.load();
+  },
+
+  async stopGW() {
+    await window.oc.gatewayStop();
+    toast('Gateway stopped', 'info');
+    this.load();
+  },
+
+  async openProject() { const p = await window.oc.getPaths(); window.oc.openFolder(p.projectDir); },
+  async openOC() { const p = await window.oc.getPaths(); window.oc.openFolder(p.ocDir); },
+
+  async runDoctor() {
+    const out = document.getElementById('doctor-output');
+    out.classList.remove('hidden');
+    out.querySelector('pre').textContent = 'Running diagnostics...';
+    const result = await window.oc.doctor();
+    out.querySelector('pre').textContent = result || 'No output';
+  }
+};
+
+// ============================================================
+// LOGS
+// ============================================================
+const Logs = {
+  async refresh() {
+    const content = await window.oc.logs(300);
+    document.getElementById('log-content').textContent = content || 'No logs available';
+    const viewer = document.getElementById('log-viewer');
+    viewer.scrollTop = viewer.scrollHeight;
+  },
+
+  async showErrors() {
+    const errors = await window.oc.logsError();
+    if (errors) {
+      document.getElementById('log-content').textContent = '=== ERROR LOG ===\n\n' + errors;
+    } else {
+      toast('No error logs found', 'info');
+    }
+  }
+};
+
+// ============================================================
+// INIT
+// ============================================================
+(async function init() {
+  await Dashboard.refresh();
+  // Auto-refresh dashboard every 10s
+  setInterval(() => { if (App.currentPage === 'dashboard') Dashboard.refresh(); }, 10000);
+})();

@@ -1,6 +1,7 @@
 # Dependencies
 node_modules/
 .npm-cache/
+
 # Build output
 dist/
 
@@ -18,21 +19,32 @@ groups/global/*
 !groups/main/CLAUDE.md
 !groups/global/CLAUDE.md
 
-# Secrets
+# Secrets — NEVER commit
 *.keys.json
 .env
+manager-store.json
+
+# GUI build artifacts and deps
+gui/node_modules/
+gui/dist/
+gui/build/
+gui/.DS_Store
 
 # Temp files
 .tmp-*
 
 # OS
 .DS_Store
+Thumbs.db
 
 # IDE
 .idea/
 .vscode/
+*.swp
+*.swo
 
 # Skills system (local per-installation state)
 .nanoclaw/
 
+# Docs cache
 agents-sdk-docs
