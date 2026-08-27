@@ -297,7 +297,7 @@ function diagnosticsCard(): HTMLElement {
           'div',
           { class: 'note warn', style: { marginTop: '8px' } },
           h('div', { text: 'node-pty is not built for this Electron version, so agent terminals run in pipe mode and cannot show interactive prompts.' }),
-          h('div', { style: { marginTop: '5px' } }, 'Fix with ', h('code', { text: 'npx electron-builder install-app-deps' }), '.'),
+          h('div', { style: { marginTop: '5px' } }, 'Rebuild it with ', h('code', { text: 'npm rebuild node-pty' }), ' and restart.'),
         ),
       );
     }

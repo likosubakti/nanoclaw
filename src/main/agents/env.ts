@@ -1,4 +1,5 @@
-import type { ProviderId } from '@shared/types';
+import type { AppSettings, ProviderId } from '@shared/types';
+import { readCliCredentials } from '../auth/cli-credentials';
 import { resolveApiKey } from '../store/secrets';
 import { loadSettings, resolveAnthropicCompatUrl, resolveBaseUrl } from '../store/settings';
 import { enrichedPath } from './cli-detect';
@@ -11,6 +12,21 @@ import { enrichedPath } from './cli-detect';
  * ANTHROPIC_AUTH_TOKEN point at it. That is how one agent binary ends up
  * serving two of the three backends.
  */
+/**
+ * Whether to hand the CLI our stored API key.
+ *
+ * On the `api` transport the user has asked for key-based billing, so the key
+ * goes through. On the `cli` transport they asked for the subscription — but
+ * only a CLI that actually holds a session can serve that, so when there is no
+ * session the key is still passed rather than letting the run fail. This has to
+ * agree with CliProvider.test(), which reports "ready" on exactly that basis.
+ */
+function shouldPassKey(provider: 'anthropic' | 'openai', settings: AppSettings): boolean {
+  if (!resolveApiKey(provider)) return false;
+  if (settings.providers[provider].transport === 'api') return true;
+  return !readCliCredentials(provider).loggedIn;
+}
+
 export function buildCliEnv(provider: ProviderId): NodeJS.ProcessEnv {
   const settings = loadSettings();
   const env: NodeJS.ProcessEnv = {
@@ -41,11 +57,8 @@ export function buildCliEnv(provider: ProviderId): NodeJS.ProcessEnv {
     }
 
     case 'anthropic': {
-      const key = resolveApiKey('anthropic');
-      // With no key, leave the environment alone: Claude Code then uses the
-      // subscription session it already holds.
-      if (key && settings.providers.anthropic.transport === 'api') {
-        env.ANTHROPIC_API_KEY = key.key;
+      if (shouldPassKey('anthropic', settings)) {
+        env.ANTHROPIC_API_KEY = resolveApiKey('anthropic')!.key;
       }
       const base = settings.providers.anthropic.baseUrl?.trim();
       if (base) env.ANTHROPIC_BASE_URL = base;
@@ -53,9 +66,8 @@ export function buildCliEnv(provider: ProviderId): NodeJS.ProcessEnv {
     }
 
     case 'openai': {
-      const key = resolveApiKey('openai');
-      if (key && settings.providers.openai.transport === 'api') {
-        env.OPENAI_API_KEY = key.key;
+      if (shouldPassKey('openai', settings)) {
+        env.OPENAI_API_KEY = resolveApiKey('openai')!.key;
       }
       const base = settings.providers.openai.baseUrl?.trim();
       if (base && base !== resolveBaseUrl('openai', settings)) env.OPENAI_BASE_URL = base;

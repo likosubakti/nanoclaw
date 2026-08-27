@@ -115,9 +115,12 @@ with their output.
 by the same id. Output is forwarded straight from the pty to the renderer without buffering in the
 main process.
 
-`node-pty` is loaded with `require` inside a `try`. When the native binding does not match
-Electron's ABI, terminals fall back to `child_process` pipes, and `TerminalInfo.pty` tells the UI to
-show a banner rather than pretending everything is fine.
+`node-pty` is loaded with `require` inside a `try`. It is an N-API module, so the binary built at
+`npm install` time loads under Electron unchanged — no Electron-specific rebuild is needed, and
+`electron-builder`'s `npmRebuild` is disabled precisely because that rebuild deletes the working
+binary before trying (and possibly failing) to replace it. When the binary is missing anyway,
+terminals fall back to `child_process` pipes and `TerminalInfo.pty` tells the UI to show a banner
+rather than pretending everything is fine.
 
 ## Storage
 

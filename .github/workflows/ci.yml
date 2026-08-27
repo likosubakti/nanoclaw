@@ -16,8 +16,6 @@ jobs:
           node-version: 22
           cache: npm
 
-      # CI=true makes scripts/postinstall.mjs skip the native rebuild; node-pty
-      # is not needed for typecheck, tests, or bundling.
       - name: Install
         run: npm ci
 
@@ -44,3 +42,16 @@ jobs:
           sudo apt-get install -y xvfb libgtk-3-0 libnss3 libasound2t64 libsecret-1-0
           xvfb-run -a --server-args="-screen 0 1280x800x24" \
             node scripts/smoke.mjs
+
+      # Packaging is where a working checkout most often stops working, so it
+      # runs on every push rather than only at release time.
+      - name: Package
+        run: npm run dist
+
+      - name: Check the packaged app starts
+        run: |
+          chmod +x release/*.AppImage
+          xvfb-run -a --server-args="-screen 0 1280x800x24" \
+            ./release/*.AppImage --appimage-extract-and-run --no-sandbox
+        env:
+          GLM_STUDIO_SMOKE: '1'

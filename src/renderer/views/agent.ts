@@ -201,7 +201,7 @@ function paintBanner(): void {
       h('span', {
         class: 'warn',
         text: 'pipe mode — interactive prompts will not render',
-        title: 'Rebuild node-pty for Electron: npx electron-builder install-app-deps',
+        title: 'Rebuild the terminal backend: npm rebuild node-pty',
       }),
     );
   }
@@ -403,6 +403,17 @@ function terminalTheme(): Record<string, string> {
         yellow: '#fbbf24',
         white: '#e6ebf5',
       };
+}
+
+/**
+ * Switches to the agents view and starts a session there. Used by the File menu,
+ * Ctrl+T, and the desktop launcher's "Agent Terminal" action.
+ */
+export async function openAgentSession(provider?: ProviderId): Promise<void> {
+  update({ view: 'agents' });
+  // Let the view mount so `host` exists and has a measurable size.
+  await new Promise((resolve) => requestAnimationFrame(resolve));
+  await openTerminal(provider ?? state.settings.defaultProvider);
 }
 
 /** Opens a login session for a provider and switches to the agents view. */

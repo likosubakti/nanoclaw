@@ -13,25 +13,29 @@ extraResources:
     to: icons
     filter: ['**/*.png']
 linux:
+  # .rpm is deliberately absent: it needs the `rpmbuild` binary, which is not
+  # present on Debian/Ubuntu, and its absence would fail the whole `npm run
+  # dist`. Build it explicitly with `npm run dist:rpm` after installing rpm.
   target:
     - AppImage
     - deb
-    - rpm
     - tar.gz
   category: Development
   icon: resources/icons
   synopsis: Desktop workspace for GLM, Claude Code, and Codex
-  description: >
-    GLM Studio is a single desktop application for talking to GLM (Zhipu / Z.ai),
-    Anthropic Claude, and OpenAI models, and for driving the Claude Code and Codex
-    command line agents from a graphical terminal.
+  # This also becomes the .desktop Comment (the launcher tooltip), so it stays
+  # to a single line rather than a paragraph.
+  description: Chat with GLM, Claude, and OpenAI, and run the Claude Code and Codex agents.
+  # A flat name-to-value map: electron-builder writes each pair straight into
+  # [Desktop Entry]. Nesting these under an `entry:` key emits a literal
+  # `entry=[object Object]` line and silently drops the rest.
   desktop:
-    entry:
-      Name: GLM Studio
-      Comment: Chat and agent workspace for GLM, Claude Code, and Codex
-      Categories: Development;Utility;
-      Keywords: glm;zhipu;zai;claude;codex;chatgpt;ai;llm;agent;
-      StartupWMClass: GLM Studio
+    Name: GLM Studio
+    GenericName: AI Chat and Agent Workspace
+    # Categories is not listed here: the `category` field above wins.
+    Keywords: glm;zhipu;zai;claude;codex;chatgpt;anthropic;openai;ai;llm;agent;chat;
+    StartupNotify: 'true'
+    StartupWMClass: GLM Studio
 deb:
   depends:
     - libgtk-3-0
@@ -44,4 +48,10 @@ deb:
     - libsecret-1-0
 appImage:
   artifactName: ${productName}-${version}-${arch}.${ext}
-npmRebuild: true
+# node-pty is an N-API (node-addon-api) module, so the binary produced at
+# `npm install` time against Node headers already loads in Electron. Letting
+# electron-builder rebuild it is not just redundant: @electron/rebuild deletes
+# build/Release first, so a failed rebuild — no compiler, or no network access
+# to electronjs.org for the headers — leaves a previously working install with
+# no binary at all.
+npmRebuild: false

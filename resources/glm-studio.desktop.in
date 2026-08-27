@@ -11,7 +11,6 @@ Categories=Development;Utility;Network;
 Keywords=glm;zhipu;zai;claude;codex;chatgpt;anthropic;openai;ai;llm;agent;chat;
 StartupNotify=true
 StartupWMClass=GLM Studio
-MimeType=x-scheme-handler/glm-studio;
 Actions=NewChat;AgentTerminal;
 
 [Desktop Action NewChat]

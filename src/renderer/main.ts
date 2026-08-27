@@ -16,6 +16,7 @@ import {
 } from './state';
 import {
   buildAgentToolbar,
+  openAgentSession,
   renderAgents,
   teardownAgents,
 } from './views/agent';
@@ -49,7 +50,20 @@ let mounted: { view: View; conversationId: string | null } = {
   conversationId: null,
 };
 
+/** A route that arrived before the shell was ready to act on it. */
+let pendingRoute: string | null = null;
+let booted = false;
+
 async function boot(): Promise<void> {
+  // Registered before the first await. The main process routes desktop-action
+  // flags (--agent, --new-chat) as soon as the renderer finishes loading, which
+  // lands well before the rest of boot() completes; without this the very
+  // navigation the user asked for on the command line is dropped.
+  api.app.onNavigate((route) => {
+    if (booted) handleNavigate(route);
+    else pendingRoute = route;
+  });
+
   await loadSettings();
   await Promise.all([refreshStatuses(), refreshConversations()]);
 
@@ -65,7 +79,11 @@ async function boot(): Promise<void> {
   subscribe(onStateChange);
   wireGlobalShortcuts();
 
-  api.app.onNavigate(handleNavigate);
+  booted = true;
+  if (pendingRoute) {
+    handleNavigate(pendingRoute);
+    pendingRoute = null;
+  }
 
   // Providers can be connected outside the app (a CLI login in another
   // terminal, a keyring unlock), so refresh the badges periodically.
@@ -372,6 +390,9 @@ function handleNavigate(route: string): void {
       void newConversation();
       break;
     case 'new-terminal':
+      // The menu item and Ctrl+T promise a new session, not just the view.
+      void openAgentSession();
+      break;
     case 'view-agents':
       update({ view: 'agents' });
       break;

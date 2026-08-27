@@ -56,7 +56,15 @@ export async function runChat(
   try {
     const adapter = adapterFor(request.provider, request.transport);
     await adapter.stream(request, { streamId, signal: controller.signal, emit });
-    emit({ type: 'done', streamId, durationMs: Date.now() - started });
+    // Cancelling a fetch body makes the reader finish cleanly rather than
+    // throw, so an aborted turn arrives here, not in the catch below. Without
+    // this check the UI would present a truncated answer as a complete one.
+    emit({
+      type: 'done',
+      streamId,
+      finishReason: controller.signal.aborted ? 'aborted' : undefined,
+      durationMs: Date.now() - started,
+    });
   } catch (err) {
     if (controller.signal.aborted) {
       emit({ type: 'done', streamId, finishReason: 'aborted', durationMs: Date.now() - started });

@@ -11,7 +11,7 @@
  */
 import * as esbuild from 'esbuild';
 import { cp, mkdir, readFile } from 'node:fs/promises';
-import { existsSync } from 'node:fs';
+import { existsSync, rmSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -103,6 +103,9 @@ async function ensureIcons() {
 }
 
 async function run() {
+  // Wipe dist first: a renamed or deleted source file would otherwise leave a
+  // stale bundle behind, and electron-builder would ship it.
+  if (!watch) rmSync(path.join(root, 'dist'), { recursive: true, force: true });
   await ensureIcons();
   await copyStatic();
   if (watch) {

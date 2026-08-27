@@ -303,7 +303,7 @@ function renderMessage(message: ChatMessage, provider: ProviderId): HTMLElement 
     { class: 'message' },
     h('div', {
       class: `avatar ${isUser ? 'user' : message.meta?.provider ?? provider}`,
-      text: isUser ? 'You'.slice(0, 2).toUpperCase() : providerInitials(message.meta?.provider ?? provider),
+      text: isUser ? 'You' : providerInitials(message.meta?.provider ?? provider),
     }),
     bubble,
   );

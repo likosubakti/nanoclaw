@@ -4,7 +4,10 @@
   "version": "0.1.0",
   "description": "A Linux desktop workspace for GLM (Zhipu / Z.ai), Anthropic Claude Code, and OpenAI Codex \u2014 one GUI, one login screen, three agent backends.",
   "license": "MIT",
-  "author": "likosubakti",
+  "author": {
+    "name": "likosubakti",
+    "email": "likosubakti@users.noreply.github.com"
+  },
   "homepage": "https://github.com/likosubakti/nanoclaw",
   "repository": {
     "type": "git",
@@ -23,10 +26,10 @@
     "test": "node scripts/test.mjs",
     "icons": "node scripts/gen-icons.mjs",
     "dist": "npm run build && electron-builder --linux",
+    "dist:rpm": "npm run build && electron-builder --linux rpm",
     "dist:dir": "npm run build && electron-builder --linux dir",
     "install:desktop": "npm run build && bash scripts/install-desktop.sh",
-    "uninstall:desktop": "bash scripts/uninstall-desktop.sh",
-    "postinstall": "node scripts/postinstall.mjs"
+    "uninstall:desktop": "bash scripts/uninstall-desktop.sh"
   },
   "dependencies": {
     "node-pty": "^1.0.0"

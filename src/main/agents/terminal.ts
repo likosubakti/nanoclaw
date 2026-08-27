@@ -12,10 +12,12 @@ import { createLogger } from '../util/logger';
 const log = createLogger('terminal');
 
 /**
- * node-pty is a native module built against Electron's ABI. When that build is
- * unavailable — no compiler on the machine, an ABI mismatch after an Electron
- * upgrade — the terminal degrades to plain pipes instead of disappearing.
- * Pipe mode cannot run a full TUI, so the UI is told which mode it got.
+ * node-pty is a native module. It is built with node-addon-api (N-API), so the
+ * binary produced at install time works under Electron without an
+ * Electron-specific rebuild — but it still has to have been built at all, and
+ * that step fails on machines with no compiler or Python. Rather than lose the
+ * feature, the terminal degrades to plain pipes. Pipe mode cannot run a full
+ * TUI, so the UI is told which mode it got.
  */
 type PtyModule = typeof import('node-pty');
 
@@ -145,9 +147,9 @@ export async function startTerminal(spec: TerminalSpec): Promise<TerminalInfo> {
       type: 'data',
       id,
       data:
-        '\x1b[33m⚠ Running in pipe mode: node-pty is not built for this Electron version.\r\n' +
+        '\x1b[33m⚠ Running in pipe mode: the node-pty native binary is missing.\r\n' +
         '  Interactive prompts and full-screen UIs will not render.\r\n' +
-        '  Fix with: npx electron-builder install-app-deps\x1b[0m\r\n\r\n',
+        '  Fix with: npm rebuild node-pty\x1b[0m\r\n\r\n',
     });
 
     sessions.set(id, {

@@ -61,7 +61,8 @@ npm run uninstall:desktop
 ### Packaged builds
 
 ```bash
-npm run dist        # AppImage, .deb, .rpm, and .tar.gz into release/
+npm run dist        # AppImage, .deb, and .tar.gz into release/
+npm run dist:rpm    # .rpm as well — needs the `rpm` package installed
 ```
 
 ### Run without installing
@@ -187,11 +188,12 @@ minimal `PATH` that usually excludes npm's global bin. GLM Studio already search
 locations (`~/.local/bin`, `~/.npm-global/bin`, `~/.bun/bin`, nvm and fnm directories, `/snap/bin`).
 If yours is elsewhere, set the absolute path under **Settings → Advanced → CLI path**.
 
-**Terminals say "pipe mode".** `node-pty` is a native module that must match Electron's ABI. Rebuild
-it — the app keeps working in the meantime, just without interactive prompts:
+**Terminals say "pipe mode".** `node-pty`'s native binary is missing — its build step at install
+time needs a C++ compiler and Python. Install those (`build-essential` and `python3` on Debian and
+Ubuntu) and rebuild it. The app keeps working in the meantime, just without interactive prompts:
 
 ```bash
-npx electron-builder install-app-deps
+npm rebuild node-pty
 ```
 
 **401 from GLM.** Almost always an endpoint mismatch: a Coding Plan key on the general endpoint, or
