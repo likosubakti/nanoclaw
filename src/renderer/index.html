@@ -1,0 +1,25 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <!--
+      The renderer never makes network requests of its own — every provider call
+      goes through IPC — so connect-src is locked to nothing. Inline styles are
+      allowed because xterm.js injects them.
+    -->
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self' data:; connect-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'"
+    />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>GLM Studio</title>
+    <link rel="stylesheet" href="./styles.css" />
+    <link rel="stylesheet" href="./main.css" />
+  </head>
+  <body>
+    <div id="root" class="app" data-view="chat">
+      <div class="boot">Starting GLM Studio…</div>
+    </div>
+    <script type="module" src="./main.js"></script>
+  </body>
+</html>

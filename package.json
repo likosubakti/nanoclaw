@@ -1,47 +1,44 @@
 {
-  "name": "nanoclaw",
-  "version": "1.2.14",
-  "description": "Personal Claude assistant. Lightweight, secure, customizable.",
+  "name": "glm-studio",
+  "productName": "GLM Studio",
+  "version": "0.1.0",
+  "description": "A Linux desktop workspace for GLM (Zhipu / Z.ai), Anthropic Claude Code, and OpenAI Codex \u2014 one GUI, one login screen, three agent backends.",
+  "license": "MIT",
+  "author": "likosubakti",
+  "homepage": "https://github.com/likosubakti/nanoclaw",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/likosubakti/nanoclaw.git"
+  },
+  "main": "dist/main/index.js",
   "type": "module",
-  "main": "dist/index.js",
-  "scripts": {
-    "build": "tsc",
-    "start": "node dist/index.js",
-    "dev": "tsx src/index.ts",
-    "typecheck": "tsc --noEmit",
-    "format": "prettier --write \"src/**/*.ts\"",
-    "format:fix": "prettier --write \"src/**/*.ts\"",
-    "format:check": "prettier --check \"src/**/*.ts\"",
-    "prepare": "husky",
-    "setup": "tsx setup/index.ts",
-    "auth": "tsx src/whatsapp-auth.ts",
-    "test": "vitest run",
-    "test:watch": "vitest"
-  },
-  "dependencies": {
-    "@whiskeysockets/baileys": "^7.0.0-rc.9",
-    "better-sqlite3": "^11.8.1",
-    "cron-parser": "^5.5.0",
-    "grammy": "^1.41.1",
-    "pino": "^9.6.0",
-    "pino-pretty": "^13.0.0",
-    "qrcode": "^1.5.4",
-    "qrcode-terminal": "^0.12.0",
-    "yaml": "^2.8.2",
-    "zod": "^4.3.6"
-  },
-  "devDependencies": {
-    "@types/better-sqlite3": "^7.6.12",
-    "@types/node": "^22.10.0",
-    "@types/qrcode-terminal": "^0.12.0",
-    "@vitest/coverage-v8": "^4.0.18",
-    "husky": "^9.1.7",
-    "prettier": "^3.8.1",
-    "tsx": "^4.19.0",
-    "typescript": "^5.7.0",
-    "vitest": "^4.0.18"
-  },
   "engines": {
     "node": ">=20"
+  },
+  "scripts": {
+    "build": "node scripts/build.mjs",
+    "dev": "node scripts/dev.mjs",
+    "start": "npm run build && electron .",
+    "typecheck": "tsc --noEmit",
+    "test": "node scripts/test.mjs",
+    "icons": "node scripts/gen-icons.mjs",
+    "dist": "npm run build && electron-builder --linux",
+    "dist:dir": "npm run build && electron-builder --linux dir",
+    "install:desktop": "npm run build && bash scripts/install-desktop.sh",
+    "uninstall:desktop": "bash scripts/uninstall-desktop.sh",
+    "postinstall": "node scripts/postinstall.mjs"
+  },
+  "dependencies": {
+    "node-pty": "^1.0.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.2",
+    "@xterm/addon-fit": "^0.10.0",
+    "@xterm/addon-web-links": "^0.11.0",
+    "@xterm/xterm": "^5.5.0",
+    "electron": "^33.3.1",
+    "electron-builder": "^25.1.8",
+    "esbuild": "^0.24.2",
+    "typescript": "^5.7.2"
   }
 }

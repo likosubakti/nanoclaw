@@ -1,0 +1,47 @@
+appId: io.github.likosubakti.glmstudio
+productName: GLM Studio
+copyright: Copyright (c) 2026 likosubakti
+directories:
+  output: release
+  buildResources: resources
+files:
+  - dist/**/*
+  - package.json
+  - '!**/*.map'
+extraResources:
+  - from: resources/icons
+    to: icons
+    filter: ['**/*.png']
+linux:
+  target:
+    - AppImage
+    - deb
+    - rpm
+    - tar.gz
+  category: Development
+  icon: resources/icons
+  synopsis: Desktop workspace for GLM, Claude Code, and Codex
+  description: >
+    GLM Studio is a single desktop application for talking to GLM (Zhipu / Z.ai),
+    Anthropic Claude, and OpenAI models, and for driving the Claude Code and Codex
+    command line agents from a graphical terminal.
+  desktop:
+    entry:
+      Name: GLM Studio
+      Comment: Chat and agent workspace for GLM, Claude Code, and Codex
+      Categories: Development;Utility;
+      Keywords: glm;zhipu;zai;claude;codex;chatgpt;ai;llm;agent;
+      StartupWMClass: GLM Studio
+deb:
+  depends:
+    - libgtk-3-0
+    - libnotify4
+    - libnss3
+    - libxss1
+    - libxtst6
+    - xdg-utils
+    - libatspi2.0-0
+    - libsecret-1-0
+appImage:
+  artifactName: ${productName}-${version}-${arch}.${ext}
+npmRebuild: true

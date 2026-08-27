@@ -1,0 +1,23 @@
+[Desktop Entry]
+Type=Application
+Version=1.0
+Name=GLM Studio
+GenericName=AI Chat and Agent Workspace
+Comment=Chat and agent workspace for GLM, Claude Code, and Codex
+Exec=@EXEC@ %U
+Icon=glm-studio
+Terminal=false
+Categories=Development;Utility;Network;
+Keywords=glm;zhipu;zai;claude;codex;chatgpt;anthropic;openai;ai;llm;agent;chat;
+StartupNotify=true
+StartupWMClass=GLM Studio
+MimeType=x-scheme-handler/glm-studio;
+Actions=NewChat;AgentTerminal;
+
+[Desktop Action NewChat]
+Name=New Chat
+Exec=@EXEC@ --new-chat
+
+[Desktop Action AgentTerminal]
+Name=Agent Terminal
+Exec=@EXEC@ --agent

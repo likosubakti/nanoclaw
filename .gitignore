@@ -1,50 +1,10 @@
-# Dependencies
 node_modules/
-.npm-cache/
-
-# Build output
 dist/
-
-# Local data & auth
-store/
-data/
-logs/
-
-# Groups - only track base structure and specific CLAUDE.md files
-groups/*
-!groups/main/
-!groups/global/
-groups/main/*
-groups/global/*
-!groups/main/CLAUDE.md
-!groups/global/CLAUDE.md
-
-# Secrets — NEVER commit
-*.keys.json
-.env
-manager-store.json
-
-# GUI build artifacts and deps
-gui/node_modules/
-gui/dist/
-gui/build/
-gui/.DS_Store
-
-# Temp files
-.tmp-*
-
-# OS
+release/
+*.log
 .DS_Store
-Thumbs.db
+.env
+.env.local
 
-# IDE
-.idea/
-.vscode/
-*.swp
-*.swo
-
-# Skills system (local per-installation state)
-.nanoclaw/
-
-# Docs cache
-agents-sdk-docs
+# Generated raster icons (regenerate with `npm run icons`)
+resources/icons/*.png
