@@ -229,8 +229,8 @@ Environment variables:
 | `GLM_STUDIO_DISABLE_GPU=1` | Disables hardware acceleration |
 | `GLM_STUDIO_WORKSPACE` | Default agent working directory |
 
-Keys are also read from `ZAI_API_KEY`, `ZHIPUAI_API_KEY`, `GLM_API_KEY`, `ANTHROPIC_API_KEY`, and
-`OPENAI_API_KEY` when nothing is stored.
+Keys are also read from `ZAI_API_KEY`, `Z_AI_API_KEY`, `ZHIPUAI_API_KEY`, `GLM_API_KEY`,
+`ANTHROPIC_API_KEY`, and `OPENAI_API_KEY` when nothing is stored.
 
 Further reading: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) ·
 [docs/PROVIDERS.md](docs/PROVIDERS.md) · [docs/LOGIN.md](docs/LOGIN.md)

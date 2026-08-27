@@ -16,7 +16,7 @@ npm test             # unit tests (node:test via scripts/test.mjs)
 npm run typecheck    # tsc --noEmit
 npm run build        # production bundles into dist/
 npm run icons        # regenerate resources/icons
-npm run dist         # AppImage / deb / rpm into release/
+npm run dist         # AppImage / deb / tar.gz into release/ (rpm: npm run dist:rpm)
 npm run install:desktop   # build + install the launcher entry
 ```
 
