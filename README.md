@@ -1,8 +1,8 @@
 # GLM Studio
 
 A Linux desktop app for **GLM** (Zhipu / Z.ai), **Anthropic Claude**, and **OpenAI** — chat with
-all three from one window, and drive the **Claude Code** and **Codex** agents in an embedded
-terminal.
+all three from one window, drive the **Claude Code** and **Codex** agents in an embedded terminal,
+and sit them all around a table to argue a question out.
 
 GLM has no first-party desktop client on Linux. GLM Studio fills that gap, and since it had to
 solve authentication and streaming anyway, it does the same for Claude and OpenAI: one app, one
@@ -22,6 +22,13 @@ panel for reasoning models that expose their thinking.
 chat wrapper around an API: the actual CLI, with its tools, file edits, and permission prompts.
 Choosing GLM points Claude Code at Z.ai's Anthropic-compatible endpoint, so the same agent runs
 on GLM models.
+
+**Roundtable** — Put a question to all of them at once and watch them discuss it. A moderator turns
+your rough thought into a proper brief, writes each seat an instruction aimed at its role,
+researches, and rules on when the discussion is finished. See
+[docs/ROUNDTABLE.md](docs/ROUNDTABLE.md).
+
+![The roundtable](docs/images/roundtable.png)
 
 **Login** — API keys stored in your OS keyring, or a subscription sign-in handled by the vendor's
 own CLI. Both routes are first-class; you pick per provider.
@@ -141,13 +148,21 @@ silently bill your Anthropic account instead.
 
 ---
 
+## Watching from your phone
+
+Settings → **Telegram** bridges a discussion to a bot you own: follow it live, and start new rounds
+remotely. It long-polls, so there is no public URL or port forwarding. The bot answers nobody until
+you pair a chat with a one-time code. Full setup in [docs/TELEGRAM.md](docs/TELEGRAM.md).
+
+---
+
 ## Keyboard shortcuts
 
 | Shortcut | Action |
 |---|---|
 | `Ctrl+N` | New chat |
 | `Ctrl+T` | New agent terminal |
-| `Ctrl+1` / `Ctrl+2` / `Ctrl+3` | Chat / Agents / Login |
+| `Ctrl+1` … `Ctrl+4` | Chat / Roundtable / Agents / Login |
 | `Ctrl+,` | Settings |
 | `Ctrl+S` | Export conversation as Markdown |
 | `Enter` | Send (configurable to `Ctrl+Enter`) |
@@ -162,6 +177,7 @@ silently bill your Anthropic account instead.
 | `~/.config/glm-studio/settings.json` | Preferences |
 | `~/.config/glm-studio/secrets.json` | API keys, encrypted (mode `0600`) |
 | `~/.local/share/glm-studio/conversations/` | One JSON file per conversation |
+| `~/.local/share/glm-studio/rooms/` | One JSON file per roundtable discussion |
 | `~/.local/state/glm-studio/glm-studio.log` | Application log |
 
 Nothing is sent anywhere except the provider endpoint you selected. There is no telemetry.
@@ -178,6 +194,8 @@ Nothing is sent anywhere except the provider endpoint you selected. There is no 
 - An API key sitting in a CLI's own config is offered as an explicit one-click import, never
   adopted silently.
 - Authorization headers are redacted before anything reaches the log.
+- The Telegram bot token is held the same way, and the bridge answers **nobody** until a chat
+  completes pairing — see [docs/TELEGRAM.md](docs/TELEGRAM.md).
 
 ---
 
@@ -233,7 +251,8 @@ Keys are also read from `ZAI_API_KEY`, `Z_AI_API_KEY`, `ZHIPUAI_API_KEY`, `GLM_A
 `ANTHROPIC_API_KEY`, and `OPENAI_API_KEY` when nothing is stored.
 
 Further reading: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) ·
-[docs/PROVIDERS.md](docs/PROVIDERS.md) · [docs/LOGIN.md](docs/LOGIN.md)
+[docs/PROVIDERS.md](docs/PROVIDERS.md) · [docs/LOGIN.md](docs/LOGIN.md) ·
+[docs/ROUNDTABLE.md](docs/ROUNDTABLE.md) · [docs/TELEGRAM.md](docs/TELEGRAM.md)
 
 ---
 

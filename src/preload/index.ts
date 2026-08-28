@@ -131,6 +131,20 @@ const api = {
     },
   },
 
+  telegram: {
+    status: (): Promise<{
+      status: string;
+      username?: string;
+      error?: string;
+      pairingCode: string;
+      allowedChatIds: number[];
+    }> => ipcRenderer.invoke(IPC.telegramStatus),
+    start: (): Promise<{ ok: boolean; message: string }> => ipcRenderer.invoke(IPC.telegramStart),
+    stop: (): Promise<unknown> => ipcRenderer.invoke(IPC.telegramStop),
+    setToken: (token: string): Promise<unknown> => ipcRenderer.invoke(IPC.telegramSetToken, token),
+    unpair: (chatId: number): Promise<AppSettings> => ipcRenderer.invoke(IPC.telegramUnpair, chatId),
+  },
+
   app: {
     diagnostics: (): Promise<Diagnostics> => ipcRenderer.invoke(IPC.diagnostics),
     pickDirectory: (current?: string): Promise<string | null> =>

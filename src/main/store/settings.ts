@@ -25,7 +25,7 @@ function defaultProvider(provider: ProviderId): ProviderSettings {
 export function defaultSettings(): AppSettings {
   return {
     version: SETTINGS_VERSION,
-    theme: 'dark',
+    theme: 'light',
     fontSize: 14,
     defaultProvider: 'glm',
     systemPrompt: '',
@@ -34,6 +34,7 @@ export function defaultSettings(): AppSettings {
     thinking: false,
     workspaceDir: defaultWorkspace(),
     sendOnEnter: true,
+    telegram: { enabled: false, allowedChatIds: [], mirrorChat: false },
     providers: {
       glm: defaultProvider('glm'),
       anthropic: defaultProvider('anthropic'),
@@ -63,6 +64,7 @@ function merge(stored: unknown): AppSettings {
     ...raw,
     version: SETTINGS_VERSION,
     providers,
+    telegram: { ...base.telegram, ...(raw.telegram ?? {}) },
   };
 }
 

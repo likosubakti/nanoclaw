@@ -30,6 +30,7 @@ import {
 import { renderLogin } from './views/login';
 import {
   buildRoundtableToolbar,
+  currentRoomId,
   renderRoundtable,
   teardownRoundtable,
 } from './views/roundtable';
@@ -50,9 +51,10 @@ let topbarEl: HTMLElement;
 let viewEl: HTMLElement;
 
 /** What is currently mounted, so we can tell a real view change from a repaint. */
-let mounted: { view: View; conversationId: string | null } = {
+let mounted: { view: View; conversationId: string | null; roomId: string | null } = {
   view: 'chat',
   conversationId: null,
+  roomId: null,
 };
 
 /** A route that arrived before the shell was ready to act on it. */
@@ -125,10 +127,15 @@ function onStateChange(): void {
 
 function mountView(force: boolean): void {
   const conversationId = state.current?.id ?? null;
+  const roomId = state.view === 'roundtable' ? currentRoomId() : mounted.roomId;
   const viewChanged = mounted.view !== state.view;
   const conversationChanged = state.view === 'chat' && mounted.conversationId !== conversationId;
+  // Opening, switching or leaving a room is a structural change; everything
+  // else inside a room is repainted by the view's own event handlers, which
+  // must not be torn out mid-round.
+  const roomChanged = state.view === 'roundtable' && mounted.roomId !== roomId;
 
-  if (!force && !viewChanged && !conversationChanged) {
+  if (!force && !viewChanged && !conversationChanged && !roomChanged) {
     // Same view, same conversation: nothing structural to redo. Login and
     // Settings are cheap and data-driven, so repaint those in place — keeping
     // the scroll position, or changing one setting would jump to the top.
@@ -153,7 +160,7 @@ function mountView(force: boolean): void {
   if (!force && !viewChanged && conversationChanged && state.view === 'chat') {
     // Cheaper than a full remount, and keeps the composer's contents.
     repaintTranscript();
-    mounted = { view: state.view, conversationId };
+    mounted = { view: state.view, conversationId, roomId };
     return;
   }
 
@@ -179,7 +186,7 @@ function mountView(force: boolean): void {
   }
 
   root.dataset.view = state.view;
-  mounted = { view: state.view, conversationId };
+  mounted = { view: state.view, conversationId, roomId };
 }
 
 /* ------------------------------------------------------------- sidebar --- */

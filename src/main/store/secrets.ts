@@ -24,7 +24,11 @@ interface SecretsFile {
   values: Record<string, string>;
 }
 
-type SecretKey = `${ProviderId}.apiKey`;
+/**
+ * Anything the vault holds. Provider keys plus the Telegram bot token, which is
+ * a bearer credential in exactly the same sense and gets the same protection.
+ */
+type SecretKey = `${ProviderId}.apiKey` | 'telegram.botToken';
 
 const EMPTY: SecretsFile = { version: 1, backend: 'file', values: {} };
 

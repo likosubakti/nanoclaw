@@ -133,7 +133,7 @@ export function buildRoundtableToolbar(): HTMLElement[] {
   const controls: HTMLElement[] = [
     h('span', {
       class: 'badge',
-      text: `${totals.rounds} rounds · ${totals.turns} turns`,
+      text: `${plural(totals.rounds, 'round')} · ${plural(totals.turns, 'turn')}`,
       title: 'Rounds and turns so far in this room',
     }),
     h('span', {
@@ -268,7 +268,7 @@ function roomPicker(): HTMLElement {
             h('span', {
               text: summary.consensusReached
                 ? 'consensus reached'
-                : `${summary.roundCount} rounds, still open`,
+                : `${plural(summary.roundCount, 'round')}, still open`,
             }),
             h('span', { text: '·' }),
             h('span', { text: `${summary.seatCount} seats` }),
@@ -308,11 +308,13 @@ function paintSeatStrip(): void {
   if (!seatStripEl || !room) return;
   clear(seatStripEl);
 
+  const lanes = h('div', { class: 'seat-lanes' });
+
   // The moderator sits apart from the participants: it does not answer the
   // question, it shapes it and rules on the answer.
   const mod = room.moderator;
   const modStatus = seatStatus.get('__moderator');
-  seatStripEl.appendChild(
+  lanes.appendChild(
     h(
       'div',
       {
@@ -335,7 +337,7 @@ function paintSeatStrip(): void {
       modStatus?.busy ? h('span', { class: 'spinner' }) : null,
     ),
   );
-  seatStripEl.appendChild(h('div', { class: 'seat-divider' }));
+  lanes.appendChild(h('div', { class: 'seat-divider' }));
 
   for (const seat of room.seats) {
     const status = seatStatus.get(seat.id);
@@ -370,10 +372,10 @@ function paintSeatStrip(): void {
 
     // Clicking a chip seats or un-seats that participant.
     chip.addEventListener('click', () => void toggleSeat(seat.id));
-    seatStripEl.appendChild(chip);
+    lanes.appendChild(chip);
   }
 
-  seatStripEl.appendChild(h('span', { class: 'spacer' }));
+  seatStripEl.appendChild(lanes);
   seatStripEl.appendChild(
     h(
       'button',
@@ -869,11 +871,10 @@ function briefCard(brief: ModeratorBrief): HTMLElement {
         h(
           'div',
           { class: 'brief-row' },
-          h('span', {
-            class: 'brief-seat',
-            style: { color: seat?.color },
-            text: seat?.name ?? seatId,
-          }),
+          // Identity comes from the dot beside the seat, not from tinting the
+          // name — a seat colour picked to read on dark washes out on white.
+          h('span', { class: 'seat-dot', style: { background: seat?.color } }),
+          h('span', { class: 'brief-seat', text: seat?.name ?? seatId }),
           h('span', { class: 'brief-text', text: instruction }),
         ),
       );
@@ -1535,10 +1536,23 @@ function truncate(text: string, limit: number): string {
   return text.length > limit ? `${text.slice(0, limit - 1)}…` : text;
 }
 
+function plural(n: number, noun: string): string {
+  return `${n} ${noun}${n === 1 ? '' : 's'}`;
+}
+
 function formatTokens(n: number): string {
   if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
   if (n >= 1_000) return `${(n / 1_000).toFixed(1)}k`;
   return String(n);
+}
+
+/**
+ * Which room is on screen, or null for the picker. The shell remounts this view
+ * when the answer changes; without that, opening a room updates the toolbar but
+ * leaves the picker rendered underneath it.
+ */
+export function currentRoomId(): string | null {
+  return room?.id ?? null;
 }
 
 export function teardownRoundtable(): void {

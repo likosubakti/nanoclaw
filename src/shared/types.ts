@@ -126,6 +126,20 @@ export interface ProviderSettings {
 
 export type GlmEndpointPreset = 'zai-global' | 'zai-coding' | 'bigmodel-cn' | 'custom';
 
+export interface TelegramSettings {
+  enabled: boolean;
+  /**
+   * Chats allowed to drive the app. Empty means nobody: a bot token is public
+   * in the sense that anyone who finds the bot can message it, so the bridge
+   * answers only chats that have completed pairing.
+   */
+  allowedChatIds: number[];
+  /** Post round progress to this chat as it happens. */
+  broadcastChatId?: number;
+  /** Mirror chat conversations too, not just roundtable rooms. */
+  mirrorChat: boolean;
+}
+
 export interface AppSettings {
   version: number;
   theme: 'dark' | 'light' | 'system';
@@ -140,6 +154,7 @@ export interface AppSettings {
   workspaceDir: string;
   sendOnEnter: boolean;
   providers: Record<ProviderId, ProviderSettings>;
+  telegram: TelegramSettings;
 }
 
 /* --------------------------------------------------------------- auth ----- */

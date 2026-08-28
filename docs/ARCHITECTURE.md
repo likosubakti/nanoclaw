@@ -43,12 +43,14 @@ src/
     providers/       glm, anthropic, openai, cli, registry
     agents/          cli-detect, env, terminal
     auth/            zhipu-jwt, cli-credentials, login-flows
+    roundtable/      engine (rounds, moderator), prompts, store
+    telegram/        bot API client, bridge (pairing, commands, broadcast)
   preload/           the contextBridge surface
   renderer/
     main.ts          app shell, view switching
     state.ts         tiny observable store
     lib/             dom helpers, markdown renderer
-    views/           chat, agent, login, settings
+    views/           chat, roundtable, agent, login, settings
 ```
 
 ## The provider abstraction
@@ -121,6 +123,42 @@ main process.
 binary before trying (and possibly failing) to replace it. When the binary is missing anyway,
 terminals fall back to `child_process` pipes and `TerminalInfo.pty` tells the UI to show a banner
 rather than pretending everything is fine.
+
+## The Roundtable
+
+`roundtable/engine.ts` runs rounds; the seats themselves are ordinary `ProviderAdapter` calls, so
+the discussion inherits every backend and transport for free. Three decisions shape it:
+
+- **A seat is a configuration, not a backend.** Several seats may share one provider, transport and
+  account, differing only in role. That is what makes "three Claudes as cryptographer, SRE and CTO"
+  a real thing rather than a relabelling.
+- **The moderator is scaffolding, and scaffolding must fail soft.** It writes the brief, tailors it
+  per role, and rules on each round — but a moderator that errors degrades to un-tailored
+  instructions, and its free-text output is read by tolerant parsers where an unparseable ruling
+  means *continue*, never *conclude*. Declaring a consensus nobody reached is the one unacceptable
+  failure.
+- **Variation is engineered, not hoped for.** Identical seats and topic converge on identical
+  framing, so the moderator samples a framing device per round from a fixed set, is shown the ones
+  already used, and briefs at a temperature set by a per-room dial. Rulings run cooler than briefs.
+
+Only `parallel` mode runs seats concurrently; every other mode is a conversation and has to be
+ordered. There is no round cap by design, so the engine reports running token totals after each
+round rather than enforcing a budget.
+
+## The Telegram bridge
+
+`telegram/bridge.ts` long-polls `getUpdates`, because a desktop app has no public URL and asking a
+user to expose one would be absurd.
+
+The security model is the interesting part. A bot token is not a secret from anyone who can find the
+bot, so the bridge answers **nobody** by default: a chat must send a one-time pairing code, shown in
+the app and rotated on every start, before it can drive anything. Unpaired chats get a single
+refusal and are otherwise ignored.
+
+Turn text is posted as each turn completes rather than streamed. Telegram throttles chatty bots, and
+a token-by-token mirror would be rate-limited into uselessness; short status lines carry progress
+instead. Rounds started in the app are mirrored too, so the phone is a window on the room rather
+than a second channel.
 
 ## Storage
 

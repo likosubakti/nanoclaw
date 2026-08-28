@@ -17,6 +17,7 @@ export function renderSettings(container: HTMLElement): void {
   );
 
   inner.appendChild(generationCard());
+  inner.appendChild(telegramCard());
   inner.appendChild(appearanceCard());
   inner.appendChild(workspaceCard());
   inner.appendChild(advancedCard());
@@ -104,6 +105,165 @@ function generationCard(): HTMLElement {
         'Off means Ctrl+Enter sends and Enter inserts a newline.'),
     ),
   );
+}
+
+function telegramCard(): HTMLElement {
+  const body = h('div', {});
+
+  const tokenInput = h('input', {
+    type: 'password',
+    placeholder: 'Bot token from @BotFather',
+    attrs: { autocomplete: 'off', spellcheck: 'false' },
+  });
+
+  const statusLine = h('div', { class: 'note' }, 'Checking…');
+  const pairLine = h('div', {});
+  const chatsLine = h('div', {});
+
+  const refresh = async () => {
+    const status = await api.telegram.status();
+    const settings = state.settings;
+
+    clear(statusLine);
+    statusLine.className = `note ${
+      status.status === 'running' ? 'ok' : status.status === 'error' ? 'danger' : ''
+    }`;
+    statusLine.appendChild(
+      h('div', {
+        text:
+          status.status === 'running'
+            ? `Connected as @${status.username}. Watching for messages.`
+            : status.status === 'error'
+              ? `Not connected: ${status.error}`
+              : 'Not connected.',
+      }),
+    );
+
+    clear(pairLine);
+    if (status.status === 'running' && status.allowedChatIds.length === 0) {
+      pairLine.appendChild(
+        h(
+          'div',
+          { class: 'note warn', style: { marginTop: '8px' } },
+          h('div', { text: 'No chat is paired yet, so the bot will not answer anyone.' }),
+          h(
+            'div',
+            { style: { marginTop: '6px' } },
+            'Message your bot: ',
+            h('code', { text: `/pair ${status.pairingCode}` }),
+          ),
+          h('div', {
+            class: 'hint',
+            text: 'The code changes each time the bridge starts, so an old screenshot cannot pair a chat later.',
+          }),
+        ),
+      );
+    }
+
+    clear(chatsLine);
+    if (status.allowedChatIds.length) {
+      chatsLine.appendChild(
+        h('span', { class: 'label-text', style: { marginTop: '10px' }, text: 'Paired chats' }),
+      );
+      for (const chatId of status.allowedChatIds) {
+        chatsLine.appendChild(
+          h(
+            'div',
+            { class: 'row', style: { marginTop: '5px' } },
+            h('span', { class: 'badge ok', text: String(chatId) }),
+            settings.telegram.broadcastChatId === chatId
+              ? h('span', { class: 'badge', text: 'receives updates' })
+              : null,
+            h('span', { class: 'spacer' }),
+            h('button', {
+              class: 'btn danger',
+              text: 'Unpair',
+              on: {
+                click: async () => {
+                  await api.telegram.unpair(chatId);
+                  update({ settings: await api.settings.get() });
+                  void refresh();
+                },
+              },
+            }),
+          ),
+        );
+      }
+    }
+  };
+  void refresh();
+
+  body.appendChild(
+    toggle(
+      'Bridge to Telegram',
+      state.settings.telegram.enabled,
+      async (checked) => {
+        await patchSettings({ telegram: { ...state.settings.telegram, enabled: checked } });
+        if (checked) {
+          const result = await api.telegram.start();
+          toast(result.message, result.ok ? 'ok' : 'error', 8000);
+        } else {
+          await api.telegram.stop();
+        }
+        void refresh();
+      },
+      'Watch a discussion and start new rounds from your phone. Uses long polling, so no public URL or port forwarding is needed.',
+    ),
+  );
+
+  body.appendChild(
+    h(
+      'div',
+      { class: 'field', style: { marginBottom: '12px' } },
+      h('span', { class: 'label-text', text: 'Bot token' }),
+      h(
+        'div',
+        { class: 'key-row' },
+        tokenInput,
+        h(
+          'button',
+          {
+            class: 'btn primary',
+            on: {
+              click: async () => {
+                const token = tokenInput.value.trim();
+                if (!token) return toast('Paste the token from @BotFather first.', 'error');
+                await api.telegram.setToken(token);
+                tokenInput.value = '';
+                toast('Token saved to the keyring.', 'ok');
+                if (state.settings.telegram.enabled) {
+                  const result = await api.telegram.start();
+                  toast(result.message, result.ok ? 'ok' : 'error', 8000);
+                }
+                void refresh();
+              },
+            },
+          },
+          'Save',
+        ),
+      ),
+      h('span', {
+        class: 'hint',
+        text: 'Create a bot by messaging @BotFather on Telegram and sending /newbot. The token is stored with your API keys.',
+      }),
+    ),
+  );
+
+  body.appendChild(statusLine);
+  body.appendChild(pairLine);
+  body.appendChild(chatsLine);
+
+  body.appendChild(
+    h(
+      'div',
+      { class: 'note', style: { marginTop: '12px' } },
+      h('div', {
+        text: 'Anyone who finds your bot can message it, so the bridge answers nobody until a chat completes pairing. Paired chats can start rounds, which spends tokens — unpair a chat you no longer control.',
+      }),
+    ),
+  );
+
+  return card('Telegram', 'Follow a discussion, and run rounds, from anywhere.', body);
 }
 
 function appearanceCard(): HTMLElement {

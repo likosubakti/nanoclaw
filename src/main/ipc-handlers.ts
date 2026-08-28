@@ -10,7 +10,7 @@ import type {
   Transport,
 } from '@shared/types';
 import { IPC } from '@shared/ipc';
-import type { Room, RoundMode } from '@shared/roundtable';
+import type { Room, RoundMode, RoundtableEvent } from '@shared/roundtable';
 import { MODEL_CATALOG, PROVIDER_ORDER } from '@shared/models';
 import { importableKey, openKeyPortal, providerStatus, startCliLogin } from './auth/login-flows';
 import { abortChat, refreshModels, runChat, testProvider } from './providers/registry';
@@ -41,6 +41,7 @@ import {
   roomToMarkdown,
   saveRoom,
 } from './roundtable/store';
+import { bridgeStatus, broadcast, startBridge, stopBridge } from './telegram/bridge';
 import { CONFIG_DIR, DATA_DIR } from './store/paths';
 import { createLogger } from './util/logger';
 
@@ -226,8 +227,11 @@ export function registerIpcHandlers(getWindow: () => BrowserWindow | null): void
       input: { roomId: string; mode: RoundMode; message: string; seatIds?: string[] },
     ) => {
       const sender = event.sender;
-      const emit = (roundtableEvent: unknown) => {
+      const emit = (roundtableEvent: RoundtableEvent) => {
         if (!sender.isDestroyed()) sender.send(IPC.roomEvent, roundtableEvent);
+        // Rounds started in the app are mirrored to Telegram too, so the phone
+        // view is a live window on the room rather than a separate channel.
+        void broadcast(roundtableEvent);
       };
       // Not awaited: a round can run for minutes, and the renderer follows it
       // through room:event. Awaiting here would block the IPC channel.
@@ -276,6 +280,33 @@ export function registerIpcHandlers(getWindow: () => BrowserWindow | null): void
 
     await writeFile(result.filePath, roomToMarkdown(room), 'utf8');
     return { saved: true, path: result.filePath };
+  });
+
+  /* ------------------------------------------------------------ telegram -- */
+
+  ipcMain.handle(IPC.telegramStatus, () => bridgeStatus());
+  ipcMain.handle(IPC.telegramStart, () => startBridge());
+  ipcMain.handle(IPC.telegramStop, () => {
+    stopBridge();
+    return bridgeStatus();
+  });
+
+  ipcMain.handle(IPC.telegramSetToken, (_event, token: unknown) => {
+    setSecret('telegram.botToken', String(token ?? ''));
+    return bridgeStatus();
+  });
+
+  ipcMain.handle(IPC.telegramUnpair, (_event, chatId: unknown) => {
+    const settings = loadSettings();
+    const id = Number(chatId);
+    return saveSettings({
+      telegram: {
+        ...settings.telegram,
+        allowedChatIds: settings.telegram.allowedChatIds.filter((c) => c !== id),
+        broadcastChatId:
+          settings.telegram.broadcastChatId === id ? undefined : settings.telegram.broadcastChatId,
+      },
+    });
   });
 
   /* ---------------------------------------------------------------- misc -- */

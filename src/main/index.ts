@@ -7,6 +7,9 @@ import { configureAppPaths, LOG_DIR } from './store/paths';
 import { initLogger, createLogger } from './util/logger';
 import { killAllTerminals, onTerminalEvent } from './agents/terminal';
 import { abortAll } from './providers/registry';
+import { abortAllRooms } from './roundtable/engine';
+import { startBridge, stopBridge } from './telegram/bridge';
+import { loadSettings } from './store/settings';
 import { runSmokeCheck } from './smoke';
 
 // Paths must be pinned before anything reads app.getPath(), and the logger
@@ -64,6 +67,12 @@ if (!app.requestSingleInstanceLock()) {
       if (BrowserWindow.getAllWindows().length === 0) mainWindow = createMainWindow();
     });
 
+    // Reconnect the Telegram bridge if it was left enabled, so a remote watcher
+    // does not have to open the app to restore it.
+    if (loadSettings().telegram.enabled) {
+      void startBridge().then((result) => log.info(`telegram: ${result.message}`));
+    }
+
     log.info(`GLM Studio ready (electron ${process.versions.electron})`);
   });
 
@@ -71,6 +80,8 @@ if (!app.requestSingleInstanceLock()) {
 
   app.on('before-quit', () => {
     abortAll();
+    abortAllRooms();
+    stopBridge();
     killAllTerminals();
   });
 }

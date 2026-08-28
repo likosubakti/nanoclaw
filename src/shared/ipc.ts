@@ -56,6 +56,13 @@ export const IPC = {
   roomClose: 'room:close',
   roomEvent: 'room:event',
 
+  // telegram
+  telegramStatus: 'telegram:status',
+  telegramStart: 'telegram:start',
+  telegramStop: 'telegram:stop',
+  telegramSetToken: 'telegram:set-token',
+  telegramUnpair: 'telegram:unpair',
+
   // misc
   diagnostics: 'app:diagnostics',
   pickDirectory: 'app:pick-directory',

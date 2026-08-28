@@ -35,9 +35,14 @@ Always run `npm run typecheck && npm test` before committing.
 | `src/main/agents/terminal.ts` | pty sessions, with pipe fallback |
 | `src/main/store/secrets.ts` | Keyring-backed credential storage |
 | `src/main/net/sse.ts` | SSE and JSON-lines parsers |
+| `src/main/roundtable/engine.ts` | Round lifecycle, moderator brief and ruling |
+| `src/main/roundtable/prompts.ts` | Every prompt the roundtable sends, plus its tolerant parsers |
+| `src/main/telegram/bridge.ts` | Pairing, commands, and what gets mirrored |
+| `src/shared/roundtable.ts` | Seats, roles, framing devices, room types |
 | `src/preload/index.ts` | The entire renderer API surface |
 | `src/renderer/main.ts` | App shell and view switching |
 | `src/renderer/lib/markdown.ts` | Escape-then-transform Markdown renderer |
+| `src/renderer/views/roundtable.ts` | The room: seat lanes, live research trails, seat editor |
 
 ## Conventions
 
@@ -64,6 +69,12 @@ Always run `npm run typecheck && npm test` before committing.
 - **Never log credentials.** Use `redactHeaders` before logging any header map.
 - **`ANTHROPIC_API_KEY` must stay deleted** from the GLM child environment in `agents/env.ts`, or a
   stray value in the user's shell profile silently bills their Anthropic account.
+- **An unparseable moderator ruling must never mean "conclude".** `parseVerdict` defaults to
+  continuing; reading noise as agreement ends a discussion nobody finished.
+- **The Telegram bridge answers only paired chats.** Never add a path that acts on a message from a
+  chat outside `telegram.allowedChatIds`.
+- **Light and dark are both first-class.** Every colour is a token; check contrast before changing
+  the palette — the light theme's text and semantic colours are chosen to pass WCAG AA.
 
 ## Testing
 
