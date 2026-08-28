@@ -28,6 +28,7 @@
   --glm: #38bdf8;
   --anthropic: #f97316;
   --openai: #a78bfa;
+  --kimi: #2dd4bf;
 
   --ok: #34d399;
   --warn: #fbbf24;
@@ -71,6 +72,7 @@
   --glm: #0a76b8;
   --anthropic: #b04407;
   --openai: #6437cd;
+  --kimi: #0f766e;
 
   --ok: #0e7548;
   --warn: #855400;
@@ -593,6 +595,10 @@ label.field > .hint {
   color: var(--openai);
   border-color: color-mix(in srgb, var(--openai) 45%, transparent);
 }
+.avatar.kimi {
+  color: var(--kimi);
+  border-color: color-mix(in srgb, var(--kimi) 45%, transparent);
+}
 
 .bubble {
   min-width: 0;
@@ -1039,6 +1045,11 @@ label.field > .hint {
   color: var(--openai);
   background: color-mix(in srgb, var(--openai) 12%, transparent);
   border-color: color-mix(in srgb, var(--openai) 40%, transparent);
+}
+.provider-badge.kimi {
+  color: var(--kimi);
+  background: color-mix(in srgb, var(--kimi) 12%, transparent);
+  border-color: color-mix(in srgb, var(--kimi) 40%, transparent);
 }
 
 .badge {
