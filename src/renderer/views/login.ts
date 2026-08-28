@@ -192,9 +192,13 @@ function endpointChooser(provider: 'glm' | 'kimi'): HTMLElement {
         },
       },
     },
-    ...Object.entries(endpoints).map(([value, meta]) =>
-      h('option', { value, text: meta.label, attrs: { selected: value === current } }),
-    ),
+    // A preset marked cliOnly is licence-restricted to the vendor's own CLI,
+    // so it must not be offerable on the direct-HTTP transport.
+    ...Object.entries(endpoints)
+      .filter(([, meta]) => !('cliOnly' in meta && meta.cliOnly))
+      .map(([value, meta]) =>
+        h('option', { value, text: meta.label, attrs: { selected: value === current } }),
+      ),
     h('option', { value: 'custom', text: 'Custom base URL', attrs: { selected: current === 'custom' } }),
   );
 

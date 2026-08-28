@@ -13,6 +13,9 @@ import { MissingCredentialsError, type ProviderAdapter, type ProviderContext } f
 
 const log = createLogger('provider:cli');
 
+/** How long a CLI may produce nothing at all before it is presumed wedged. */
+const STALL_TIMEOUT_MS = 5 * 60_000;
+
 /**
  * Runs a turn through the vendor's own agent CLI instead of its HTTP API.
  *
@@ -98,7 +101,25 @@ export class CliProvider implements ProviderAdapter {
     child.stderr.on('data', (chunk: string) => {
       // Keep only the tail: a chatty CLI can emit megabytes of progress noise.
       stderr = (stderr + chunk).slice(-4000);
+      touch();
     });
+
+    // A stall guard, not a turn cap. With no credentials and no network, codex
+    // retries "Reconnecting... 5/5" and then waits, forever — the child never
+    // exits, so the round holds its lock and the seat never reports the one
+    // useful thing, which is that it is not signed in. Every line of output
+    // resets this, so a long turn that is genuinely working is never cut off.
+    let stalled = false;
+    let stallTimer: NodeJS.Timeout | undefined;
+    const touch = () => {
+      if (stallTimer) clearTimeout(stallTimer);
+      stallTimer = setTimeout(() => {
+        stalled = true;
+        child.kill('SIGTERM');
+      }, STALL_TIMEOUT_MS);
+      stallTimer.unref?.();
+    };
+    touch();
 
     const exited = new Promise<number | null>((resolve, reject) => {
       child.on('error', reject);
@@ -127,6 +148,7 @@ export class CliProvider implements ProviderAdapter {
           ? createCodexParser(ctx.streamId)
           : createClaudeParser(ctx.streamId);
       for await (const event of readJsonLines(child.stdout)) {
+        touch();
         for (const emitted of parse(event)) ctx.emit(emitted);
       }
       // A build without --include-partial-messages streams no deltas; this is
@@ -134,11 +156,17 @@ export class CliProvider implements ProviderAdapter {
       for (const emitted of parse.finish()) ctx.emit(emitted);
 
       const code = await exited;
+      if (stalled) {
+        throw new Error(
+          `${PROVIDER_CLI[this.provider].label} stopped responding for ${STALL_TIMEOUT_MS / 60_000} minutes and was stopped.\n\nThe usual cause is that it is not signed in and is retrying a connection it will never make. Check the Login screen.\n\n${stderr.trim().split('\n').slice(-4).join('\n')}`,
+        );
+      }
       if (code !== 0 && code !== null) {
         throw new Error(cliFailureMessage(this.provider, code, stderr));
       }
     } finally {
       ctx.signal.removeEventListener('abort', onAbort);
+      if (stallTimer) clearTimeout(stallTimer);
       if (killTimer) clearTimeout(killTimer);
       if (!child.killed) child.kill();
       kimiProfile?.cleanup();
@@ -203,6 +231,12 @@ function codexArgs(req: ChatRequest, policy: 'none' | 'research' | 'full'): stri
     // `--ignore-user-config` then stops a permissive ~/.codex/config.toml from
     // widening that back out, the same role `--restricted` plays for Claude.
     args.push('--sandbox', 'read-only', '--ignore-user-config');
+    // A turn runs in the user's workspace, and codex silently prepends any
+    // AGENTS.md it finds there to the prompt — coding instructions written for
+    // a repository, injected into a discussion about something else.
+    // `--ignore-user-config` does not cover it; project docs are not user
+    // config. Zero bytes is the documented way to suppress them.
+    args.push('-c', 'project_doc_max_bytes=0');
   }
 
   // Read the prompt from stdin.

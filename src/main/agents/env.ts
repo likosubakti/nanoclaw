@@ -61,6 +61,12 @@ export function buildCliEnv(provider: ProviderId): NodeJS.ProcessEnv {
     }
 
     case 'anthropic': {
+      // Deleted first, then set back only if this turn should use a key. A
+      // subscription seat must not inherit a stray ANTHROPIC_API_KEY from the
+      // user's shell: Claude Code would prefer it over the signed-in session
+      // and bill their API account for a turn they expected their plan to
+      // cover. `shouldPassKey` is what decides, not what happens to be in env.
+      delete env.ANTHROPIC_API_KEY;
       if (shouldPassKey('anthropic', settings)) {
         env.ANTHROPIC_API_KEY = resolveApiKey('anthropic')!.key;
       }
@@ -70,6 +76,12 @@ export function buildCliEnv(provider: ProviderId): NodeJS.ProcessEnv {
     }
 
     case 'openai': {
+      // Same hazard as GLM's: a stray key in the user's shell profile is
+      // honoured by codex ("auth is provided by environment"), so a seat meant
+      // to ride their ChatGPT subscription would silently bill their API
+      // account instead. CODEX_API_KEY is the second name it accepts.
+      delete env.OPENAI_API_KEY;
+      delete env.CODEX_API_KEY;
       if (shouldPassKey('openai', settings)) {
         env.OPENAI_API_KEY = resolveApiKey('openai')!.key;
       }
@@ -87,10 +99,15 @@ export function buildCliEnv(provider: ProviderId): NodeJS.ProcessEnv {
       delete env.OPENAI_API_KEY;
 
       // KIMI_API_KEY and KIMI_BASE_URL are the names Moonshot's own client
-      // reads, so setting them is how an API key reaches the CLI at all.
+      // reads for an API-key connection to the OPEN platform. They are not
+      // KIMI_CODE_BASE_URL, which points at the OAuth-managed coding service —
+      // Moonshot documents them as two distinct variables, and writing the
+      // coding URL into KIMI_BASE_URL would aim an API key at a surface it is
+      // not entitled to use.
       if (shouldPassKey('kimi', settings)) {
+        const base = resolveBaseUrl('kimi', settings);
         env.KIMI_API_KEY = resolveApiKey('kimi')!.key;
-        env.KIMI_BASE_URL = resolveBaseUrl('kimi', settings);
+        if (!/api\.kimi\.(com|ai)\/coding/.test(base)) env.KIMI_BASE_URL = base;
       }
       break;
     }

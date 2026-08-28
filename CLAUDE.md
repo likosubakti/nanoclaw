@@ -84,6 +84,9 @@ Always run `npm run typecheck && npm run check:wiring && npm test` before commit
   continuing; reading noise as agreement ends a discussion nobody finished.
 - **The Telegram bridge answers only paired chats.** Never add a path that acts on a message from a
   chat outside `telegram.allowedChatIds`.
+- **The reasoning switch is per model family, on two providers now.** Kimi K2.x takes
+  `thinking: {type}`; K3 always thinks and takes a top-level `reasoning_effort` — `usesReasoningEffort()`
+  picks. K3 also needs its `reasoning_content` echoed back or multi-turn degrades.
 - **Never send `budget_tokens` or `temperature` to a modern Anthropic model** — both are rejected
   with a 400 on Opus 4.6+, Sonnet 4.6+ and Fable. `usesAdaptiveThinking()` picks the shape.
 - **Never probe a CLI flag without checking `probeCapabilities` first.** An unrecognised flag makes

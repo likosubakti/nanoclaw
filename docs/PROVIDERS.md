@@ -118,11 +118,17 @@ support it ignore the field.
 
 ### Endpoints
 
-| Preset | Chat base URL |
-|---|---|
-| Moonshot — International | `https://api.moonshot.ai/v1` |
-| Kimi Code — Subscription | `https://api.kimi.com/coding/v1` |
-| Moonshot — Mainland China | `https://api.moonshot.cn/v1` |
+| Preset | Chat base URL | Reachable from |
+|---|---|---|
+| Moonshot — International | `https://api.moonshot.ai/v1` | both transports |
+| Moonshot — Mainland China | `https://api.moonshot.cn/v1` | both transports |
+| Kimi Code — Subscription | `https://api.kimi.com/coding/v1` | **the CLI only** |
+
+The subscription surface is deliberately absent from the endpoint picker.
+Moonshot restricts a Kimi Code key to their own CLI, Claude Code and Roo Code, and says other use
+"may be considered misuse and could result in restricted access" — so this app reaches it only by
+driving `kimi`, never over its own HTTP client. Keys are created at
+`platform.kimi.ai` (international) or `platform.kimi.com` (mainland).
 
 The same three-surface split as GLM, for the same reason: `.ai` and `.cn` are separate platforms
 with separate accounts, and a key from one returns `401` on the other. These URLs are not guesses —
@@ -135,20 +141,36 @@ authority on where its client points.
 
 ### Request shape
 
-OpenAI-compatible `POST /chat/completions`. Kimi's own client is a thin wrapper over the OpenAI SDK,
-so the adapter is GLM's minus the Zhipu JWT:
+OpenAI-compatible `POST /chat/completions`. Reasoning arrives on
+`choices[0].delta.reasoning_content` — the same field name GLM uses.
 
-- `thinking: { type: "enabled" }` switches on reasoning, sent only when asked for.
-- Reasoning arrives on `choices[0].delta.reasoning_content`, separate from `.content` — the same
-  field name GLM uses.
+**The reasoning switch differs by model family, and sending the wrong one is a hard error.** K2.x
+takes `thinking: { type: "enabled" }`. K3 always thinks — there is no way to switch it off — and is
+tuned with a top-level `reasoning_effort` of `"low" | "high" | "max"` (default `max`; there is no
+`"medium"`). `usesReasoningEffort()` picks the shape, and defaults to the newer one for anything
+unrecognised, for the same reason `usesAdaptiveThinking()` does on the Anthropic side.
+
+**K3 needs its reasoning echoed back.** The complete assistant message must return to `messages`
+with `reasoning_content` intact, or multi-turn and tool use degrade — and an empty string means
+"reasoned but produced nothing", so it has to round-trip as an empty string rather than be dropped.
+That is why Kimi builds its own message array instead of reusing GLM's.
+
+`max_completion_tokens` rather than `max_tokens`, which Moonshot deprecated.
 
 ### Models
 
-`kimi-k2.6` (flagship), `kimi-k2-thinking` (always reasons), `kimi-k2.5`, `kimi-k2-turbo-preview`.
+`kimi-k3` is the flagship: 1,048,576-token context, natively multimodal, always thinking. It needs a
+paid top-up to unlock, which is why the **default** stays `kimi-k2.6` — 256K context, switchable
+thinking, and the cheaper choice. Also seeded: `kimi-k2-thinking`, `kimi-k2.5`,
+`kimi-k2-turbo-preview`, all 256K.
 
-The catalog seeds **only ids confirmed from Moonshot's own client and changelog, and no context
-windows** — an invented number is worse than an absent one. `/models` returns `context_length` and
-`supports_reasoning` per model, so the refresh control beside the picker fills in the real values.
+`/models` returns `context_length` and `supports_reasoning` per model, so the refresh control beside
+the picker replaces this list with what the account can actually see — which matters here, since a
+key without the top-up may not list K3 at all.
+
+The Kimi Code plan exposes `kimi-for-coding` and `kimi-for-coding-highspeed` instead. Those are
+stable pointers whose backing model changes server-side, so nothing may pin a context window to
+them.
 
 ### Kimi Code CLI
 
@@ -241,8 +263,22 @@ codex exec --json --skip-git-repo-check [--model M] -
 
 Codex has changed its JSON envelope across releases, so the parser accepts every shape it has used:
 `msg.type` deltas (`agent_message_delta`, `agent_reasoning_delta`, `exec_command_begin`,
-`token_count`) and newer `item.completed` items. Unrecognised lines are skipped rather than
-treated as an error.
+`token_count`), newer `item.completed` items, and `turn.completed` for usage. Unrecognised lines are
+skipped rather than treated as an error.
+
+Three things about Codex that are not obvious and each cost a turn if missed:
+
+- **`error` is not always fatal.** Retry chatter arrives as `error` — "Reconnecting... 2/5 (stream
+  disconnected)" four times during a turn that goes on to succeed. Only terminal errors are
+  surfaced, or a network blip paints the room red mid-turn.
+- **A wedged Codex never exits.** With no credentials it retries to 5/5 and then waits, forever, so
+  the CLI transport carries a stall guard: five minutes with no output at all and the child is
+  stopped with a message naming the likely cause. Every line resets it, so a long working turn is
+  never cut off.
+- **`AGENTS.md` is injected silently.** A turn runs in the user's workspace and Codex prepends any
+  `AGENTS.md` it finds there — coding instructions written for a repository, pushed into a
+  discussion about something else. `--ignore-user-config` does not cover it (project docs are not
+  user config); `-c project_doc_max_bytes=0` does, and discussion turns set it.
 
 ### GLM through Claude Code
 

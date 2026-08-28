@@ -4,7 +4,8 @@ import { readSse } from '../net/sse';
 import { resolveApiKey } from '../store/secrets';
 import { loadSettings, resolveBaseUrl } from '../store/settings';
 import { createLogger } from '../util/logger';
-import { buildMessages, failure } from './glm';
+import { failure } from './glm';
+import { buildKimiMessages, usesReasoningEffort } from './kimi-request';
 import { MissingCredentialsError, type ProviderAdapter, type ProviderContext } from './types';
 
 const log = createLogger('provider:kimi');
@@ -48,13 +49,19 @@ export class KimiProvider implements ProviderAdapter {
     const body: Record<string, unknown> = {
       model,
       stream: true,
-      messages: buildMessages(req),
+      messages: buildKimiMessages(req),
       temperature: req.temperature,
-      max_tokens: req.maxTokens,
+      // `max_tokens` is a deprecated alias Moonshot normalises server-side.
+      max_completion_tokens: req.maxTokens,
     };
-    // Only when asked: a model that does not support the switch rejects it, and
-    // the always-thinking variants do not need it.
-    if (req.thinking) body.thinking = { type: 'enabled' };
+
+    if (usesReasoningEffort(model)) {
+      // K3 always thinks — there is no switch — and is tuned with a top-level
+      // effort instead. Sending `thinking` to it is not the shape it takes.
+      if (req.thinking) body.reasoning_effort = 'high';
+    } else if (req.thinking) {
+      body.thinking = { type: 'enabled' };
+    }
 
     log.debug(`streaming ${model} from ${hostOf(baseUrl)}`);
 

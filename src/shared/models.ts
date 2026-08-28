@@ -38,22 +38,30 @@ export const GLM_ENDPOINTS: Record<
  */
 export const KIMI_ENDPOINTS: Record<
   Exclude<KimiEndpointPreset, 'custom'>,
-  { label: string; baseUrl: string; note: string }
+  { label: string; baseUrl: string; note: string; cliOnly?: boolean }
 > = {
   'moonshot-global': {
     label: 'Moonshot — International',
     baseUrl: 'https://api.moonshot.ai/v1',
-    note: 'Pay-as-you-go keys from platform.moonshot.ai',
+    note: 'Pay-as-you-go keys from platform.kimi.ai',
   },
+  /**
+   * Reachable only through the Kimi Code CLI transport, never over this app's
+   * own HTTP client. Moonshot restricts a Kimi Code key to their CLI, Claude
+   * Code and Roo Code, and says other use "may be considered misuse and could
+   * result in restricted access" — so it is deliberately absent from the
+   * endpoint picker rather than offered with a warning nobody reads.
+   */
   'kimi-coding': {
     label: 'Kimi Code — Subscription',
     baseUrl: 'https://api.kimi.com/coding/v1',
-    note: 'The surface the Kimi Code CLI signs in to',
+    note: 'Reached through the Kimi Code CLI, not this app’s HTTP client',
+    cliOnly: true,
   },
   'moonshot-cn': {
     label: 'Moonshot — Mainland China',
     baseUrl: 'https://api.moonshot.cn/v1',
-    note: 'platform.moonshot.cn keys — a separate account from .ai',
+    note: 'platform.kimi.com keys — a separate account from .ai',
   },
 };
 
@@ -268,14 +276,25 @@ export const MODEL_CATALOG: ModelInfo[] = [
   // refresh control beside the picker replaces this list with what the account
   // actually returns from /models, including the per-model context length.
   {
-    id: 'kimi-k2.6',
+    id: 'kimi-k3',
     provider: 'kimi',
-    label: 'Kimi K2.6',
+    label: 'Kimi K3',
     tier: 'flagship',
-    note: 'Flagship — supports preserved thinking across turns',
+    note: 'Flagship — 1M context, always thinking. Needs a paid top-up to unlock.',
+    contextWindow: 1_048_576,
     supportsThinking: true,
     supportsVision: true,
     recommended: true,
+  },
+  {
+    id: 'kimi-k2.6',
+    provider: 'kimi',
+    label: 'Kimi K2.6',
+    tier: 'balanced',
+    note: 'The cheaper choice — switchable thinking, preserved across turns',
+    contextWindow: 262_144,
+    supportsThinking: true,
+    supportsVision: true,
   },
   {
     id: 'kimi-k2-thinking',
@@ -283,6 +302,7 @@ export const MODEL_CATALOG: ModelInfo[] = [
     label: 'Kimi K2 Thinking',
     tier: 'reasoning',
     note: 'Always reasons; no way to switch thinking off',
+    contextWindow: 262_144,
     supportsThinking: true,
   },
   {
@@ -290,7 +310,8 @@ export const MODEL_CATALOG: ModelInfo[] = [
     provider: 'kimi',
     label: 'Kimi K2.5',
     tier: 'balanced',
-    note: 'Previous flagship generation',
+    note: 'Previous generation',
+    contextWindow: 262_144,
     supportsThinking: true,
     supportsVision: true,
   },
@@ -300,6 +321,7 @@ export const MODEL_CATALOG: ModelInfo[] = [
     label: 'Kimi K2 Turbo',
     tier: 'fast',
     note: 'Faster K2 variant',
+    contextWindow: 262_144,
     supportsThinking: true,
   },
 ];
@@ -308,6 +330,7 @@ export const DEFAULT_MODELS: Record<ProviderId, string> = {
   glm: 'glm-4.6',
   anthropic: 'claude-opus-5',
   openai: 'gpt-5.1',
+  // Not k3: it needs a paid top-up, so the default must be one that works.
   kimi: 'kimi-k2.6',
 };
 
@@ -345,7 +368,7 @@ export const API_KEY_PORTALS: Record<ProviderId, { url: string; label: string }>
   glm: { url: 'https://z.ai/manage-apikey/apikey-list', label: 'Z.ai API keys' },
   anthropic: { url: 'https://console.anthropic.com/settings/keys', label: 'Anthropic Console' },
   openai: { url: 'https://platform.openai.com/api-keys', label: 'OpenAI Platform' },
-  kimi: { url: 'https://platform.moonshot.ai/console/api-keys', label: 'Moonshot Platform' },
+  kimi: { url: 'https://platform.kimi.ai/console/api-keys', label: 'Kimi Platform' },
 };
 
 /** Environment variables imported automatically when no key is stored. */

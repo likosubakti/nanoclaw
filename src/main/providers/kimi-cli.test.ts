@@ -3,6 +3,7 @@ import { test } from 'node:test';
 import type { ChatRequest } from '@shared/types';
 import { KIMI_RESEARCH_TOOLS, kimiAgentProfile, kimiArgs } from './cli-args';
 import { createKimiParser } from './cli-stream';
+import { buildKimiMessages, usesReasoningEffort } from './kimi-request';
 
 /**
  * Kimi Code differs from the other two CLIs in three ways that each fail
@@ -227,4 +228,48 @@ test('lines a future release adds are ignored, not fatal', () => {
     { role: 'assistant', content: 'fine' },
   ]);
   assert.equal(textOf(emits), 'fine');
+});
+
+/* ------------------------------------------------- api request shape ---- */
+
+test('K3 is tuned with reasoning_effort; K2 with a thinking switch', () => {
+  // Two families, two shapes. Sending one family's to the other is the same
+  // class of mistake as `budget_tokens` on a modern Anthropic model: K3 always
+  // thinks and takes a top-level effort, K2.x takes thinking: {type}.
+  assert.equal(usesReasoningEffort('kimi-k3'), true);
+  assert.equal(usesReasoningEffort('kimi-k2.6'), false);
+  assert.equal(usesReasoningEffort('kimi-k2-thinking'), false);
+  assert.equal(usesReasoningEffort('kimi-k2.5'), false);
+});
+
+test('a future K-generation is assumed to use the newer shape', () => {
+  assert.equal(usesReasoningEffort('kimi-k4'), true);
+  assert.equal(usesReasoningEffort('kimi-k10'), true);
+});
+
+test('an assistant turn is echoed back with its reasoning intact', () => {
+  // K3 needs the complete assistant message returned as-is or multi-turn and
+  // tool use degrade. An empty string means "reasoned but produced nothing"
+  // and must survive as an empty string, not be dropped.
+  const built = buildKimiMessages({
+    ...req(),
+    systemPrompt: 'You are a discussant.',
+    messages: [
+      { id: 'u1', role: 'user', content: 'ask', createdAt: 0 },
+      { id: 'a1', role: 'assistant', content: 'answer', reasoning: 'because', createdAt: 1 },
+      { id: 'a2', role: 'assistant', content: 'second', reasoning: '', createdAt: 2 },
+      { id: 'u2', role: 'user', content: 'again', createdAt: 3 },
+    ],
+  });
+  assert.equal(built[0].role, 'system');
+  assert.equal(built[2].reasoning_content, 'because');
+  assert.equal(built[3].reasoning_content, '', 'an empty reasoning must round-trip, not vanish');
+});
+
+test('a message that never carried reasoning does not gain an empty one', () => {
+  const built = buildKimiMessages({
+    ...req(),
+    messages: [{ id: 'a', role: 'assistant', content: 'x', createdAt: 0 }],
+  });
+  assert.ok(!('reasoning_content' in built[0]));
 });

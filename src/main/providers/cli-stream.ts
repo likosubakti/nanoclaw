@@ -180,9 +180,17 @@ export function createCodexParser(streamId: string): StreamParser {
           outputTokens: sum(msg.info?.total_token_usage?.output_tokens),
         });
         return out;
-      case 'error':
-        out.push({ type: 'error', streamId: id, message: msg.message ?? 'Codex reported an error.' });
+      case 'error': {
+        // Codex emits `error` for retry chatter as well as for real failures —
+        // "Reconnecting... 2/5 (stream disconnected)" arrives four times during
+        // a turn that goes on to succeed. Forwarding those paints the room red
+        // mid-turn for a network blip, so only a terminal error is surfaced.
+        const message = String(msg.message ?? 'Codex reported an error.');
+        if (!/reconnect|retry|waiting for network|stream disconnected/i.test(message)) {
+          out.push({ type: 'error', streamId: id, message });
+        }
         return out;
+      }
       default:
         break;
     }
@@ -191,11 +199,14 @@ export function createCodexParser(streamId: string): StreamParser {
     // Without this case a Codex seat contributed zero to the room's total.
     // `cached_input_tokens` is a subset of `input_tokens`, not an addition.
     if (e.type === 'turn.completed' && e.usage) {
+      // Five fields, and no total_tokens. cached_input_tokens is a subset of
+      // input_tokens, but cache_write_input_tokens is charged on top of it,
+      // and reasoning tokens are billed as output.
       out.push({
         type: 'usage',
         streamId: id,
-        inputTokens: sum(e.usage.input_tokens),
-        outputTokens: sum(e.usage.output_tokens),
+        inputTokens: sum(e.usage.input_tokens, e.usage.cache_write_input_tokens),
+        outputTokens: sum(e.usage.output_tokens, e.usage.reasoning_output_tokens),
       });
       return out;
     }
