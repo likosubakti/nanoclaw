@@ -7,7 +7,7 @@ Every backend can be reached two ways. Pick per provider on the **Login & Provid
 | GLM (Z.ai) | ✅ the only option | — |
 | Claude | ✅ Anthropic Console | ✅ Claude Pro / Max, via `claude` |
 | OpenAI | ✅ OpenAI Platform | ✅ ChatGPT Plus / Pro, via `codex` |
-| Kimi (Moonshot) | ✅ Moonshot Platform | ✅ Kimi, via `kimi-code` |
+| Kimi (Moonshot) | ✅ Moonshot Platform | ✅ Kimi, via `kimi` |
 
 GLM is the only one with no subscription sign-in of its own: its CLI is Claude Code borrowed and
 pointed at Z.ai, so there is no GLM account to log in to. Kimi ships its own agent CLI with its own
@@ -68,13 +68,16 @@ For Claude Pro/Max or ChatGPT Plus/Pro:
    ```bash
    npm install -g @anthropic-ai/claude-code    # Claude
    npm install -g @openai/codex                # OpenAI
-   uv tool install kimi-code                   # Kimi — PyPI, needs Python 3.12+
+   npm install -g @moonshot-ai/kimi-code       # Kimi — binary is `kimi`
    ```
-   Kimi Code is a Python tool rather than an npm one, which is why it uses `uv` (or `pipx`).
-   Do not install the npm package called `kimi-cli`: it is an unrelated 2018 scaffolding tool by a
-   different author, not Moonshot's.
+   **The scope matters for Kimi.** Three plausible-looking packages are not the one you want:
+   unscoped npm `kimi-cli` is an unrelated 2018 scaffolding tool by a different author; PyPI
+   `kimi-cli` and PyPI `kimi-code` are both Moonshot's own but wound-down Python CLI, which
+   installs `kimi`, `kimi-cli` and `kimi-code` as aliases of the same legacy program. The current
+   one is the npm package `@moonshot-ai/kimi-code`, and its binary is `kimi`.
 
-   The sign-in button runs `claude auth login`, `codex login` or `kimi-code login` in a terminal tab.
+   The sign-in button runs `claude auth login`, `codex login` or `kimi login` in a terminal tab.
+   Kimi's is a device-code flow: it prints a URL and a code rather than opening a browser itself.
 2. Set **How requests are sent** to the CLI option.
 3. Click **Sign in with Claude** / **Sign in with ChatGPT**. A terminal tab opens running the CLI's
    own login flow, which opens your browser.
@@ -112,9 +115,10 @@ seconds and dropped the moment a CLI terminal exits, so signing in updates the c
 A build too old to have those subcommands answers nothing, and the credential file is read as a
 fallback — for whether a session exists and whose it is, never for the token.
 
-Kimi Code has `login` and `logout` but no status command, so there is nothing to ask and it always
-takes that fallback: the app checks whether `~/.kimi/credentials/kimi-code.json` parses and whether
-its `expires_at` has passed. Two fields, and not the tokens sitting beside them.
+Kimi Code has `login` but no status command, so there is nothing to ask and it always takes that
+fallback: the app checks whether `~/.kimi-code/credentials/kimi-code.json` parses and whether its
+`expires_at` has passed. Two fields, and not the tokens sitting beside them. (`.kimi-code`, not
+`.kimi` — the latter belongs to the legacy Python CLI.)
 
 ### Subscription seats think like chat, not like coding agents
 
@@ -140,7 +144,7 @@ Each CLI enforces that differently, so each gets its own mechanism:
 | CLI | How the toolset is cut |
 |---|---|
 | `claude` | `--restricted --tools` — `""` for none, or the two web tools |
-| `kimi-code` | a generated `--agent-file`, whose `tools:` list is an allowlist (empty for none) |
+| `kimi` | a generated `--agent-file` — Markdown whose frontmatter `tools:` is an allowlist (empty for none) |
 | `codex` | `--sandbox read-only --ignore-user-config` — the shell survives, but nothing it runs can write |
 
 Codex is the weakest of the three, and the table says so rather than implying parity: it has no flag
@@ -177,7 +181,7 @@ The result: your subscription reaches the model, and the model behaves like the 
 | API keys, no keyring available | same file | base64 in a `0600` file — **obfuscation only** |
 | Claude subscription | `~/.claude/.credentials.json` | Managed by Claude Code |
 | ChatGPT subscription | `~/.codex/auth.json` | Managed by Codex |
-| Kimi subscription | `~/.kimi/credentials/kimi-code.json` | Managed by Kimi Code |
+| Kimi subscription | `~/.kimi-code/credentials/kimi-code.json` | Managed by Kimi Code |
 
 Settings → Diagnostics reports which backend is active. If it says `file (obfuscated)`, install
 `gnome-keyring` or `kwalletmanager` and restart for real encryption.

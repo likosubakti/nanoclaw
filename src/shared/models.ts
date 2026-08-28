@@ -83,9 +83,9 @@ export const PROVIDER_CLI: Record<ProviderId, { command: string; label: string; 
   // Unlike GLM, Kimi ships its own agent CLI with its own OAuth sign-in, so it
   // does not need to borrow Claude Code.
   kimi: {
-    command: 'kimi-code',
+    command: 'kimi',
     label: 'Kimi Code CLI',
-    docs: 'https://moonshotai.github.io/kimi-cli/',
+    docs: 'https://moonshotai.github.io/kimi-code/',
   },
 };
 

@@ -153,36 +153,55 @@ windows** — an invented number is worse than an absent one. `/models` returns 
 ### Kimi Code CLI
 
 Kimi is the one non-Anthropic provider that does **not** borrow Claude Code: it ships its own agent
-CLI with its own OAuth sign-in, so the CLI transport drives that instead.
+CLI with its own device-code OAuth sign-in, so the CLI transport drives that instead.
+
+Install `@moonshot-ai/kimi-code` from npm; the binary is `kimi`. Three near-miss packages exist and
+none is the right one — see [LOGIN.md](LOGIN.md#subscription-sign-in).
 
 ```
-kimi-code --print --output-format stream-json [--model M] [--thinking|--no-thinking]
-          [--work-dir DIR] [--agent-file FILE]
+kimi --output-format stream-json [--agent-file FILE] --prompt "…"
 ```
 
-Two things differ from the other CLIs and both matter:
+Three things differ from the other CLIs, and each changes what the app can promise:
 
-**It streams whole messages, not token deltas.** The print-mode JSON writer buffers content parts
-and flushes a complete message at each step boundary. Every line is therefore new content, so the
-parser appends where the other two have to decide whether the finished message repeats deltas
-already sent.
+**The prompt is an argv value, not stdin.** Kimi's prompt mode takes no piped input, so unlike
+`claude` and `codex` the text is visible in the process table for the length of the turn. That is a
+real difference in kind and is called out rather than left to be discovered.
+
+**`--model` names a config alias, not an API model id.** Passing a catalog id fails the turn
+outright — `Model "kimi-k2.6" is not configured in config.toml.` — so the seat's model is
+deliberately **not** sent and the CLI's own configured default decides. Per-seat model choice
+applies to the `api` transport, where ids are real.
+
+**The toolset is cut by an agent profile, not a flag.** `--agent-file` takes Markdown with YAML
+frontmatter; the frontmatter's `tools:` is an allowlist, so `tools: []` really is no tools, and
+`subagents: []` matters as much — an inherited subagent would run unrestricted. A discussion turn
+writes a throwaway profile to a temp directory and removes it in a `finally`.
+
+Wire format — role-tagged and OpenAI-message-shaped, not the internal event bus that `kimi acp`
+speaks:
 
 ```json
-{"role":"assistant",
- "content":[{"type":"text","text":"…"},{"type":"think","think":"…"}],
- "tool_calls":[{"type":"function","id":"…","function":{"name":"…","arguments":"{…}"}}]}
+{"role":"meta","type":"system.version","version":"0.39.0"}
+{"role":"assistant","content":"…","tool_calls":[{"type":"function","id":"…",
+                                  "function":{"name":"…","arguments":"{…}"}}]}
+{"role":"tool","tool_call_id":"…","content":"…"}
 ```
 
-**The toolset is cut by an agent specification, not a flag.** `--agent-file` replaces the whole
-spec, and a spec's `tools:` is an allowlist of fully-qualified classes — so an empty list really is
-no tools. A discussion turn writes a throwaway spec and system prompt to a temp directory, and
-removes them in a `finally` whether the turn succeeded, failed, or was stopped. `subagents: {}` is
-set explicitly: an inherited subagent would run with its own unrestricted toolset.
+`content` is a plain string, and the writer flushes one line per assistant message, so each line is
+new content and the parser appends. **Thinking deltas are discarded by that writer**, so a Kimi CLI
+seat has no reasoning trail — the API transport does. The legacy Python CLI wrote `content` as an
+array of typed parts instead; both shapes are accepted, so a user who still has the old binary on
+`PATH` gets a working seat rather than a silently empty one.
 
-Environment handed to the child: `KIMI_API_KEY` and `KIMI_BASE_URL` (the names Moonshot's client
-reads) when an API key is configured, and `ANTHROPIC_API_KEY` / `ANTHROPIC_AUTH_TOKEN` /
-`OPENAI_API_KEY` explicitly deleted — Kimi Code loads plugins and MCP servers of the user's
-choosing, and a stray key is exactly what one would reach for.
+Environment handed to the child: `KIMI_API_KEY` and `KIMI_BASE_URL` (names the CLI reads) when an
+API key is configured, and `ANTHROPIC_API_KEY` / `ANTHROPIC_AUTH_TOKEN` / `OPENAI_API_KEY`
+explicitly deleted — Kimi Code loads plugins and MCP servers of the user's choosing, and a stray
+key is exactly what one would reach for.
+
+Auth hosts are region-split like the API: `auth.kimi.com` (mainland) and `auth.kimi.ai` (global),
+selected by `kimi login --region mainland-cn|global`.
+
 
 ---
 

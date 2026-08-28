@@ -210,7 +210,8 @@ export const CLI_INSTALL_HINT: Record<ProviderId, string> = {
   glm: 'npm install -g @anthropic-ai/claude-code   (GLM Studio points it at Z.ai for you)',
   anthropic: 'npm install -g @anthropic-ai/claude-code',
   openai: 'npm install -g @openai/codex',
-  // Kimi Code is published on PyPI, not npm, and needs Python 3.12+ — which is
-  // why the hint uses uv rather than pip.
-  kimi: 'uv tool install kimi-code   (or: pipx install kimi-code)',
+  // The scope matters: the unscoped npm package `kimi-cli` is an unrelated
+  // 2018 scaffolding tool by a different author, and PyPI's `kimi-code` is
+  // Moonshot's own but wound-down Python CLI.
+  kimi: 'npm install -g @moonshot-ai/kimi-code',
 };

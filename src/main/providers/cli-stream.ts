@@ -229,27 +229,49 @@ export function createCodexParser(streamId: string): StreamParser {
 /**
  * Kimi Code `--output-format stream-json`.
  *
- * It emits whole messages, not token deltas: the printer buffers content parts
- * and flushes a complete `Message` at each step boundary. So there is nothing
- * to deduplicate here — every assistant line is new content, and appending is
- * correct where the other two parsers have to choose.
+ * The wire format is role-tagged and OpenAI-message-shaped — not the internal
+ * event bus, which is what `kimi acp` speaks:
  *
- * Shape, from `kosong.message`:
- *   {"role":"assistant",
- *    "content":[{"type":"text","text":"…"},{"type":"think","think":"…"}],
- *    "tool_calls":[{"type":"function","id":"…",
- *                   "function":{"name":"…","arguments":"{…}"}}]}
+ *   {"role":"meta","type":"system.version","version":"0.39.0"}
+ *   {"role":"assistant","content":"…","tool_calls":[{"type":"function","id":"…",
+ *                                     "function":{"name":"…","arguments":"{…}"}}]}
+ *   {"role":"tool","tool_call_id":"…","content":"…"}
+ *
+ * `content` is a plain string here, and its writer accumulates deltas and
+ * flushes one line per assistant message, so each line is new content and
+ * appending is correct.
+ *
+ * Two things this mode does not give us, worth knowing rather than hunting for:
+ * thinking deltas are discarded by that writer, so a Kimi CLI seat has no
+ * reasoning trail; and the legacy Python `kimi-cli` wrote `content` as an array
+ * of typed parts instead. Both shapes are accepted — a user who still has the
+ * old binary on PATH gets a working seat rather than an empty one.
  */
 export function createKimiParser(streamId: string): StreamParser {
   return makeParser((e, id) => {
     const out: Emit[] = [];
-    if (e.role !== 'assistant') return out; // tool results and plans are not the reply
 
-    for (const part of Array.isArray(e.content) ? e.content : []) {
-      if (part?.type === 'text' && part.text) {
-        out.push({ type: 'text', streamId: id, text: part.text });
-      } else if (part?.type === 'think' && part.think) {
-        out.push({ type: 'reasoning', streamId: id, text: part.think });
+    if (e.role === 'meta') {
+      // The resume hint is the only meta line carrying something we want.
+      if (e.type === 'session.resume_hint' && e.session_id) {
+        out.push({ type: 'session', streamId: id, sessionId: String(e.session_id) });
+      }
+      return out;
+    }
+
+    // Tool results and user echoes are not the reply.
+    if (e.role !== 'assistant') return out;
+
+    if (typeof e.content === 'string') {
+      if (e.content) out.push({ type: 'text', streamId: id, text: e.content });
+    } else {
+      // Legacy `kimi-cli`: content is an array of typed parts.
+      for (const part of Array.isArray(e.content) ? e.content : []) {
+        if (part?.type === 'text' && part.text) {
+          out.push({ type: 'text', streamId: id, text: part.text });
+        } else if (part?.type === 'think' && part.think) {
+          out.push({ type: 'reasoning', streamId: id, text: part.think });
+        }
       }
     }
 
@@ -277,20 +299,25 @@ function describeKimiTool(
   const asString = (value: unknown) => (typeof value === 'string' ? value : undefined);
 
   switch (name) {
+    // Current CLI uses WebSearch/WebFetch; the legacy one used SearchWeb/FetchURL.
+    case 'WebSearch':
     case 'SearchWeb': {
       const query = asString(input?.query);
       return { name: 'WebSearch', query, detail: query };
     }
+    case 'WebFetch':
     case 'FetchURL': {
       const url = asString(input?.url);
       return { name: 'WebFetch', url, detail: url };
     }
+    case 'Bash':
     case 'Shell':
       return { name: 'shell', detail: asString(input?.command) ?? summarise(input) };
+    case 'Read':
     case 'ReadFile':
+    case 'Write':
     case 'WriteFile':
-    case 'StrReplaceFile':
-      return { name, detail: asString(input?.path) ?? summarise(input) };
+      return { name, detail: asString(input?.path ?? input?.file_path) ?? summarise(input) };
     default:
       return { name, detail: summarise(input) };
   }

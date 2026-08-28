@@ -125,57 +125,62 @@ export function discussionSystemPrompt(caller: string | undefined, policy: 'none
 /* ----------------------------------------------------------------- kimi -- */
 
 /**
- * Argument construction for the Kimi Code CLI.
+ * Argument construction for the Kimi Code CLI (`kimi`).
  *
- * Kimi's print mode emits whole messages rather than token deltas, which the
- * stream parser already handles — it is the same path an older Claude Code
- * build takes.
+ * Two things differ from the other two and both are load-bearing.
  *
- * Tool restriction works differently again: there is no `--tools` flag, but
- * `--agent-file` replaces the whole agent specification, and a spec names its
- * tools explicitly as an allowlist. So a discussion turn hands it a generated
- * spec with the system prompt replaced and `tools` cut to nothing (chat) or to
- * web search and fetch (research) — the same two policies as everywhere else.
+ * The prompt is an argv value (`-p`), not stdin. Kimi's prompt mode takes no
+ * piped input, so unlike `claude` and `codex` the text is visible in the
+ * process table for the length of the turn. That is a real difference in kind,
+ * not a detail, so it is stated here rather than left to be discovered.
+ *
+ * `--model` names an alias defined in the user's config.toml, NOT an API model
+ * id. Passing a catalog id fails the turn outright — `Model "kimi-k2.6" is not
+ * configured in config.toml.` — so the seat's model is deliberately not sent,
+ * and the CLI's own configured default decides. Per-seat model choice applies
+ * to the api transport, where ids are real.
  */
-export function kimiArgs(
-  req: ChatRequest,
-  options: { agentFile?: string } = {},
-): string[] {
-  const args = ['--print', '--output-format', 'stream-json'];
+export function kimiArgs(req: ChatRequest, options: { agentFile?: string } = {}): string[] {
+  const args = ['--output-format', 'stream-json'];
 
-  if (req.model) args.push('--model', req.model);
-  // Thinking is a tri-state in Kimi: unset means "whatever the config says",
-  // so both branches are stated rather than only the on one.
-  args.push(req.thinking ? '--thinking' : '--no-thinking');
-  if (req.cwd) args.push('--work-dir', req.cwd);
+  // Never --model: see above. A wrong alias is a lost turn, not a fallback.
   if (options.agentFile) args.push('--agent-file', options.agentFile);
 
+  // Last, so the prompt is unambiguous even if it begins with a dash.
+  args.push('--prompt', lastUserText(req));
   return args;
 }
 
-/** The two tool sets a generated Kimi agent spec may name. */
-export const KIMI_RESEARCH_TOOLS = ['kimi_cli.tools.web:SearchWeb', 'kimi_cli.tools.web:FetchURL'];
+function lastUserText(req: ChatRequest): string {
+  for (let i = req.messages.length - 1; i >= 0; i--) {
+    if (req.messages[i].role === 'user') return req.messages[i].content;
+  }
+  return '';
+}
 
 /**
- * A Kimi agent specification for a discussion turn.
+ * The throwaway agent profile a restricted Kimi turn runs under.
  *
- * `tools` is an allowlist of fully-qualified tool classes, so an empty list is
- * genuinely no tools — the same guarantee `--tools ""` gives Claude Code, and
- * for the same reason: a discussant that can edit the user's files is not a
- * discussant.
+ * Kimi profiles are Markdown with YAML frontmatter: the frontmatter carries the
+ * tool allowlist, the body is the system prompt. `tools: []` is genuinely no
+ * tools, and `subagents: []` matters just as much — an inherited subagent would
+ * run with its own unrestricted toolset.
+ *
+ * The name must match Kimi's own `^[a-z0-9]+(?:-[a-z0-9]+)*$`.
  */
-export function kimiAgentSpec(
-  systemPromptPath: string,
-  policy: 'none' | 'research',
-): string {
+export const KIMI_RESEARCH_TOOLS = ['WebSearch', 'WebFetch'];
+
+export function kimiAgentProfile(systemPrompt: string, policy: 'none' | 'research'): string {
   const tools = policy === 'research' ? KIMI_RESEARCH_TOOLS : [];
   return [
-    'version: 1',
-    'agent:',
-    '  name: ""',
-    `  system_prompt_path: ${JSON.stringify(systemPromptPath)}`,
-    `  tools: [${tools.map((t) => JSON.stringify(t)).join(', ')}]`,
-    '  subagents: {}',
+    '---',
+    'name: glm-studio-discussant',
+    'description: A participant in a discussion, not a coding agent.',
+    `tools: [${tools.map((t) => JSON.stringify(t)).join(', ')}]`,
+    'subagents: []',
+    '---',
+    '',
+    systemPrompt,
     '',
   ].join('\n');
 }

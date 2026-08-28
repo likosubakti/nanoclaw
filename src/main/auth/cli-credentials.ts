@@ -140,24 +140,27 @@ function glmState(): CliCredentialState {
 }
 
 /**
- * Kimi Code stores its OAuth session at ~/.kimi/credentials/kimi-code.json
- * (KIMI_SHARE_DIR moves the directory). Only two fields are read — whether the
- * file parses and whether it has expired. The tokens beside them are not this
- * app's to touch, and unlike the other two CLIs there is no status command to
- * ask instead.
+ * Kimi Code stores its OAuth session under ~/.kimi-code/credentials/, one file
+ * per login (the default flow writes kimi-code.json). KIMI_CODE_HOME moves the
+ * directory. Only two fields are read — whether the file parses and whether it
+ * has expired. The tokens beside them are not this app's to touch, and unlike
+ * the other two CLIs there is no status command to ask instead.
+ *
+ * Note this is `.kimi-code`, not `.kimi`: the latter belongs to the legacy
+ * Python `kimi-cli`, which Moonshot has wound down in favour of this one.
  */
 function kimiState(): CliCredentialState {
-  const shareDir = process.env.KIMI_SHARE_DIR || path.join(home, '.kimi');
-  const token = readJson<{ expires_at?: number; access_token?: string; scope?: string }>(
-    path.join(shareDir, 'credentials', 'kimi-code.json'),
+  const codeHome = process.env.KIMI_CODE_HOME || path.join(home, '.kimi-code');
+  const token = readJson<{ expires_at?: number; access_token?: string }>(
+    path.join(codeHome, 'credentials', 'kimi-code.json'),
   );
 
   if (!token?.access_token) return { loggedIn: false };
 
-  // expires_at is epoch seconds, as written by the CLI.
+  // expires_at is unix seconds, as written by the CLI.
   const expired = typeof token.expires_at === 'number' && token.expires_at * 1000 < Date.now();
   if (expired) {
-    return { loggedIn: false, accountHint: 'session expired — run `kimi-code login`' };
+    return { loggedIn: false, accountHint: 'session expired — run `kimi login`' };
   }
   return { loggedIn: true, accountHint: 'signed in with Kimi' };
 }

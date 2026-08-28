@@ -1,15 +1,14 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import type { ChatRequest } from '@shared/types';
-import { KIMI_RESEARCH_TOOLS, kimiAgentSpec, kimiArgs } from './cli-args';
+import { KIMI_RESEARCH_TOOLS, kimiAgentProfile, kimiArgs } from './cli-args';
 import { createKimiParser } from './cli-stream';
 
 /**
- * Kimi Code restricts its toolset through an agent specification rather than a
- * flag, and streams whole messages rather than token deltas. Both differ from
- * the other two CLIs in ways that fail quietly if they regress: a spec that
- * names the wrong tools hands a discussant the filesystem, and a parser that
- * expects deltas returns an empty answer.
+ * Kimi Code differs from the other two CLIs in three ways that each fail
+ * quietly if they regress: it restricts tools through an agent profile rather
+ * than a flag, its `--model` names a config alias rather than an API model id,
+ * and its stream is role-tagged messages rather than token deltas.
  */
 
 function req(over: Partial<ChatRequest> = {}): ChatRequest {
@@ -30,54 +29,79 @@ const valuesAfter = (args: string[], flag: string) => {
 
 /* ------------------------------------------------------------------ argv -- */
 
-test('a turn runs in print mode with a JSON stream', () => {
+test('a turn asks for the JSON stream and carries the prompt', () => {
   const args = kimiArgs(req());
-  assert.ok(args.includes('--print'));
   assert.deepEqual(valuesAfter(args, '--output-format'), ['stream-json']);
-  assert.deepEqual(valuesAfter(args, '--model'), ['kimi-k2.6']);
+  assert.deepEqual(valuesAfter(args, '--prompt'), ['hi']);
 });
 
-test('thinking is stated explicitly in both directions', () => {
-  // Kimi treats an absent flag as "whatever the user's config says", so
-  // leaving it out would let a config file decide, not the app.
-  assert.ok(kimiArgs(req({ thinking: true })).includes('--thinking'));
-  assert.ok(kimiArgs(req({ thinking: false })).includes('--no-thinking'));
+test('the seat model is deliberately not sent', () => {
+  // `--model` names an alias in the user's config.toml, not an API model id.
+  // Passing a catalog id is not a soft failure — the CLI refuses the turn with
+  // `Model "kimi-k2.6" is not configured in config.toml.`
+  const args = kimiArgs(req({ model: 'kimi-k2.6' }));
+  assert.ok(!args.includes('--model'));
+  assert.ok(!args.includes('-m'));
+  assert.ok(!args.includes('kimi-k2.6'));
+});
+
+test('the prompt goes last, so one starting with a dash is unambiguous', () => {
+  const args = kimiArgs(req({ messages: [{ id: 'u', role: 'user', content: '--help me', createdAt: 0 }] }));
+  assert.equal(args[args.length - 2], '--prompt');
+  assert.equal(args[args.length - 1], '--help me');
+});
+
+test('the last user message is the prompt, not the first', () => {
+  const args = kimiArgs(
+    req({
+      messages: [
+        { id: 'a', role: 'user', content: 'older', createdAt: 0 },
+        { id: 'b', role: 'assistant', content: 'reply', createdAt: 1 },
+        { id: 'c', role: 'user', content: 'newest', createdAt: 2 },
+      ],
+    }),
+  );
+  assert.deepEqual(valuesAfter(args, '--prompt'), ['newest']);
 });
 
 test('an agent file is passed through only when one was generated', () => {
   assert.ok(!kimiArgs(req()).includes('--agent-file'));
-  const args = kimiArgs(req(), { agentFile: '/tmp/x/agent.yaml' });
-  assert.deepEqual(valuesAfter(args, '--agent-file'), ['/tmp/x/agent.yaml']);
+  const args = kimiArgs(req(), { agentFile: '/tmp/x/discussant.md' });
+  assert.deepEqual(valuesAfter(args, '--agent-file'), ['/tmp/x/discussant.md']);
 });
 
-/* ------------------------------------------------------------ agent spec -- */
+/* --------------------------------------------------------- agent profile -- */
 
 test('a chat turn names no tools at all', () => {
-  // `tools` is an allowlist of fully-qualified classes, so an empty list is
-  // genuinely no tools — the equivalent of Claude Code's `--tools ""`.
-  const spec = kimiAgentSpec('/tmp/x/system.md', 'none');
-  assert.match(spec, /tools: \[\]/);
-  assert.match(spec, /system_prompt_path: "\/tmp\/x\/system\.md"/);
-  assert.ok(!spec.includes('Shell'), 'a discussant must not be able to run commands');
-  assert.ok(!spec.includes('WriteFile'));
+  // `tools` is an allowlist, so an empty list is genuinely no tools — the
+  // equivalent of Claude Code's `--tools ""`.
+  const profile = kimiAgentProfile('You are taking part in a conversation.', 'none');
+  assert.match(profile, /^---\n/, 'a Kimi profile is Markdown with YAML frontmatter');
+  assert.match(profile, /tools: \[\]/);
+  assert.match(profile, /subagents: \[\]/, 'an inherited subagent would run unrestricted');
+  assert.ok(profile.includes('You are taking part in a conversation.'), 'the body is the prompt');
+  assert.ok(!profile.includes('Bash'));
 });
 
 test('a research turn names exactly search and fetch', () => {
-  const spec = kimiAgentSpec('/tmp/x/system.md', 'research');
-  for (const tool of KIMI_RESEARCH_TOOLS) assert.ok(spec.includes(tool), tool);
-  assert.ok(!spec.includes('Shell'));
-  assert.ok(!spec.includes('WriteFile'));
-  assert.ok(!spec.includes('ReadFile'), 'reading the user’s files is not research');
+  const profile = kimiAgentProfile('sys', 'research');
+  for (const tool of KIMI_RESEARCH_TOOLS) assert.ok(profile.includes(tool), tool);
+  assert.ok(!profile.includes('Bash'));
+  assert.ok(!profile.includes('Write'));
+  assert.ok(!profile.includes('Read"'), 'reading the user’s files is not research');
 });
 
-test('the spec quotes a path containing spaces', () => {
-  const spec = kimiAgentSpec('/home/a b/system.md', 'none');
-  assert.match(spec, /system_prompt_path: "\/home\/a b\/system\.md"/);
+test('the profile name matches the pattern Kimi enforces', () => {
+  // Kimi rejects a profile whose name is not ^[a-z0-9]+(?:-[a-z0-9]+)*$.
+  const name = /^name: (.+)$/m.exec(kimiAgentProfile('sys', 'none'))?.[1];
+  assert.match(String(name), /^[a-z0-9]+(?:-[a-z0-9]+)*$/);
 });
 
-test('the spec drops the builtin subagents', () => {
-  // Left inherited, a subagent would run with its own unrestricted toolset.
-  assert.match(kimiAgentSpec('/tmp/s.md', 'none'), /subagents: \{\}/);
+test('the frontmatter fence closes before the prompt body', () => {
+  const profile = kimiAgentProfile('BODY TEXT', 'none');
+  const fences = profile.split('\n').filter((l) => l.trim() === '---').length;
+  assert.equal(fences, 2);
+  assert.ok(profile.indexOf('BODY TEXT') > profile.lastIndexOf('---'));
 });
 
 /* --------------------------------------------------------------- parser -- */
@@ -90,70 +114,75 @@ function run(events: unknown[]) {
   return [...events.flatMap((e) => parse(e)), ...parse.finish()];
 }
 
-test('a whole assistant message carries the reply', () => {
+test('the real wire shape carries the reply', () => {
+  // Verbatim from `kimi -p … --output-format stream-json`: content is a plain
+  // string, not an array of parts.
   const emits = run([
-    { role: 'assistant', content: [{ type: 'text', text: 'Hello world' }] },
+    { role: 'meta', type: 'system.version', version: '0.39.0' },
+    { role: 'assistant', content: 'Hello world' },
   ]);
   assert.equal(textOf(emits), 'Hello world');
 });
 
-test('successive messages append rather than replace', () => {
-  // Kimi flushes a message per step, so every line is new content — unlike the
-  // other two, where the whole message repeats what the deltas already sent.
+test('successive assistant lines append rather than replace', () => {
+  // The writer flushes one line per assistant message, so every line is new.
   const emits = run([
-    { role: 'assistant', content: [{ type: 'text', text: 'One. ' }] },
-    { role: 'assistant', content: [{ type: 'text', text: 'Two.' }] },
+    { role: 'assistant', content: 'One. ' },
+    { role: 'assistant', content: 'Two.' },
   ]);
   assert.equal(textOf(emits), 'One. Two.');
 });
 
-test('thinking is separated from the reply', () => {
+test('the resume hint becomes the session id', () => {
   const emits = run([
-    {
-      role: 'assistant',
-      content: [
-        { type: 'think', think: 'weighing it up' },
-        { type: 'text', text: 'the answer' },
-      ],
-    },
+    { role: 'meta', type: 'session.resume_hint', session_id: 'abc', command: 'kimi -r abc' },
+    { role: 'assistant', content: 'hi' },
+  ]);
+  assert.equal((emits.find((e: any) => e.type === 'session') as any).sessionId, 'abc');
+});
+
+test('meta lines are never mistaken for the reply', () => {
+  const emits = run([
+    { role: 'meta', type: 'system.version', version: '0.39.0' },
+    { role: 'meta', type: 'turn.step.retrying', failed_attempt: 1, next_attempt: 2 },
+  ]);
+  assert.equal(textOf(emits), '');
+});
+
+test('tool results are not the reply', () => {
+  const emits = run([
+    { role: 'tool', tool_call_id: '1', content: 'command output' },
+    { role: 'assistant', content: 'the answer' },
   ]);
   assert.equal(textOf(emits), 'the answer');
-  assert.equal((emits.find((e: any) => e.type === 'reasoning') as any).text, 'weighing it up');
 });
 
 test('a web search becomes a readable trail entry', () => {
   const emits = run([
     {
       role: 'assistant',
-      content: [],
+      content: '',
       tool_calls: [
-        {
-          type: 'function',
-          id: '1',
-          function: { name: 'SearchWeb', arguments: '{"query":"kimi k2 context window"}' },
-        },
+        { type: 'function', id: '1', function: { name: 'WebSearch', arguments: '{"query":"kimi k2 context"}' } },
       ],
     },
   ]);
   const tool = emits.find((e: any) => e.type === 'tool') as any;
-  // Normalised to the same name the other providers emit, so one trail
-  // renderer serves every seat.
   assert.equal(tool.name, 'WebSearch');
-  assert.equal(tool.query, 'kimi k2 context window');
+  assert.equal(tool.query, 'kimi k2 context');
 });
 
 test('a fetch carries its URL, so the trail can link it', () => {
   const emits = run([
     {
       role: 'assistant',
-      content: [],
+      content: '',
       tool_calls: [
-        { type: 'function', id: '1', function: { name: 'FetchURL', arguments: '{"url":"https://a.example"}' } },
+        { type: 'function', id: '1', function: { name: 'WebFetch', arguments: '{"url":"https://a.example"}' } },
       ],
     },
   ]);
   const tool = emits.find((e: any) => e.type === 'tool') as any;
-  assert.equal(tool.name, 'WebFetch');
   assert.equal(tool.url, 'https://a.example');
 });
 
@@ -161,27 +190,41 @@ test('unparseable tool arguments do not lose the tool call', () => {
   const emits = run([
     {
       role: 'assistant',
-      content: [],
-      tool_calls: [{ type: 'function', id: '1', function: { name: 'Shell', arguments: '{broken' } }],
+      content: '',
+      tool_calls: [{ type: 'function', id: '1', function: { name: 'Bash', arguments: '{broken' } }],
     },
   ]);
   assert.equal((emits.find((e: any) => e.type === 'tool') as any).name, 'shell');
 });
 
-test('tool results and plan lines are not mistaken for the reply', () => {
+test('the legacy kimi-cli shape still produces a reply', () => {
+  // A user with the wound-down Python CLI still on PATH should get a working
+  // seat rather than a silently empty one.
   const emits = run([
-    { role: 'tool', tool_call_id: '1', content: [{ type: 'text', text: 'command output' }] },
-    { role: 'assistant', content: [{ type: 'text', text: 'the answer' }] },
+    {
+      role: 'assistant',
+      content: [
+        { type: 'think', think: 'weighing it up' },
+        { type: 'text', text: 'the answer' },
+      ],
+      tool_calls: [
+        { type: 'function', id: '1', function: { name: 'SearchWeb', arguments: '{"query":"q"}' } },
+      ],
+    },
   ]);
   assert.equal(textOf(emits), 'the answer');
+  assert.equal((emits.find((e: any) => e.type === 'reasoning') as any).text, 'weighing it up');
+  // Normalised to the same name every other provider emits.
+  assert.equal((emits.find((e: any) => e.type === 'tool') as any).name, 'WebSearch');
 });
 
 test('lines a future release adds are ignored, not fatal', () => {
   const emits = run([
     null,
     'a bare string',
-    { role: 'assistant', content: [{ type: 'something_new' }] },
-    { role: 'assistant', content: [{ type: 'text', text: 'fine' }] },
+    { role: 'assistant' },
+    { role: 'something_new', payload: {} },
+    { role: 'assistant', content: 'fine' },
   ]);
   assert.equal(textOf(emits), 'fine');
 });
