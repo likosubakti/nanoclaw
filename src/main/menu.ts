@@ -38,8 +38,9 @@ export function buildMenu(getWindow: () => BrowserWindow | null): void {
       label: '&View',
       submenu: [
         { label: 'Chat', accelerator: 'CmdOrCtrl+1', click: send('view-chat') },
-        { label: 'Agents', accelerator: 'CmdOrCtrl+2', click: send('view-agents') },
-        { label: 'Login & Providers', accelerator: 'CmdOrCtrl+3', click: send('view-login') },
+        { label: 'Roundtable', accelerator: 'CmdOrCtrl+2', click: send('view-roundtable') },
+        { label: 'Agents', accelerator: 'CmdOrCtrl+3', click: send('view-agents') },
+        { label: 'Login & Providers', accelerator: 'CmdOrCtrl+4', click: send('view-login') },
         { type: 'separator' },
         { role: 'resetZoom' },
         { role: 'zoomIn' },

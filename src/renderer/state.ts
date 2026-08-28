@@ -16,7 +16,7 @@ declare global {
 
 export const api = window.glm;
 
-export type View = 'chat' | 'agents' | 'login' | 'settings';
+export type View = 'chat' | 'roundtable' | 'agents' | 'login' | 'settings';
 
 interface State {
   view: View;

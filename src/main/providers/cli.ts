@@ -186,7 +186,7 @@ function parseClaudeEvent(event: unknown, streamId: string): Emit[] {
   if (e.type === 'assistant' && Array.isArray(e.message?.content) && !e.__partialSeen) {
     for (const block of e.message.content) {
       if (block.type === 'tool_use') {
-        out.push({ type: 'tool', streamId, name: block.name, detail: summarise(block.input) });
+        out.push({ type: 'tool', streamId, ...describeTool(block.name, block.input) });
       }
     }
     return out;
@@ -237,6 +237,16 @@ function parseCodexEvent(event: unknown, streamId: string): Emit[] {
         detail: Array.isArray(msg.command) ? msg.command.join(' ') : summarise(msg.command),
       });
       return out;
+    case 'web_search_begin':
+    case 'web_search_call':
+      out.push({
+        type: 'tool',
+        streamId,
+        name: 'WebSearch',
+        query: typeof msg.query === 'string' ? msg.query : undefined,
+        detail: typeof msg.query === 'string' ? msg.query : summarise(msg.query),
+      });
+      return out;
     case 'token_count':
       out.push({
         type: 'usage',
@@ -257,6 +267,8 @@ function parseCodexEvent(event: unknown, streamId: string): Emit[] {
       out.push({ type: 'text', streamId, text: e.item.text });
     } else if (e.item.type === 'command_execution') {
       out.push({ type: 'tool', streamId, name: 'shell', detail: e.item.command });
+    } else if (e.item.type === 'web_search') {
+      out.push({ type: 'tool', streamId, name: 'WebSearch', query: e.item.query, detail: e.item.query });
     }
     return out;
   }
@@ -274,6 +286,45 @@ function lastUserMessage(req: ChatRequest): string {
     if (req.messages[i].role === 'user') return req.messages[i].content;
   }
   return '';
+}
+
+/**
+ * Turns a Claude Code tool_use into a research-trail entry.
+ *
+ * The point is the structured fields: a WebSearch's terms and a WebFetch's URL
+ * are what make the trail readable ("searched X", "read Y") instead of a wall
+ * of JSON, and the URL becomes a link the user can follow.
+ */
+function describeTool(
+  name: string,
+  input: any,
+): { name: string; detail?: string; query?: string; url?: string } {
+  const asString = (value: unknown) => (typeof value === 'string' ? value : undefined);
+
+  switch (name) {
+    case 'WebSearch': {
+      const query = asString(input?.query);
+      return { name, query, detail: query };
+    }
+    case 'WebFetch': {
+      const url = asString(input?.url);
+      const prompt = asString(input?.prompt);
+      return { name, url, detail: prompt ? `${url} — ${prompt}` : url };
+    }
+    case 'Read':
+    case 'Write':
+    case 'Edit':
+      return { name, detail: asString(input?.file_path) ?? summarise(input) };
+    case 'Bash':
+      return { name, detail: asString(input?.command) ?? summarise(input) };
+    case 'Grep':
+    case 'Glob':
+      return { name, detail: asString(input?.pattern) ?? summarise(input) };
+    case 'Task':
+      return { name, detail: asString(input?.description) ?? summarise(input) };
+    default:
+      return { name, detail: summarise(input) };
+  }
 }
 
 function summarise(value: unknown): string | undefined {

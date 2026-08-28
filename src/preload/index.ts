@@ -1,6 +1,13 @@
 import { contextBridge, ipcRenderer } from 'electron';
 import { IPC } from '@shared/ipc';
 import type {
+  Room,
+  RoomSummary,
+  RoomTotals,
+  RoundMode,
+  RoundtableEvent,
+} from '@shared/roundtable';
+import type {
   AppSettings,
   ChatRequest,
   ConnectionTestResult,
@@ -96,6 +103,31 @@ const api = {
       const listener = (_e: unknown, event: TerminalEvent) => handler(event);
       ipcRenderer.on(IPC.termEvent, listener);
       return () => ipcRenderer.removeListener(IPC.termEvent, listener);
+    },
+  },
+
+  rooms: {
+    list: (): Promise<RoomSummary[]> => ipcRenderer.invoke(IPC.roomList),
+    get: (id: string): Promise<Room | null> => ipcRenderer.invoke(IPC.roomGet, id),
+    create: (topic: string): Promise<Room> => ipcRenderer.invoke(IPC.roomCreate, topic),
+    update: (room: Room): Promise<Room> => ipcRenderer.invoke(IPC.roomUpdate, room),
+    remove: (id: string): Promise<RoomSummary[]> => ipcRenderer.invoke(IPC.roomDelete, id),
+    export: (id: string): Promise<{ saved: boolean; path?: string }> =>
+      ipcRenderer.invoke(IPC.roomExport, id),
+    run: (input: {
+      roomId: string;
+      mode: RoundMode;
+      message: string;
+      seatIds?: string[];
+    }): Promise<{ accepted: boolean }> => ipcRenderer.invoke(IPC.roomRun, input),
+    abort: (id: string): Promise<boolean> => ipcRenderer.invoke(IPC.roomAbort, id),
+    close: (id: string): Promise<Room | null> => ipcRenderer.invoke(IPC.roomClose, id),
+    totals: (id: string): Promise<{ totals: RoomTotals; running: boolean } | null> =>
+      ipcRenderer.invoke('room:totals', id),
+    onEvent: (handler: (event: RoundtableEvent) => void): (() => void) => {
+      const listener = (_e: unknown, event: RoundtableEvent) => handler(event);
+      ipcRenderer.on(IPC.roomEvent, listener);
+      return () => ipcRenderer.removeListener(IPC.roomEvent, listener);
     },
   },
 

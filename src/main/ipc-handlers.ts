@@ -10,6 +10,7 @@ import type {
   Transport,
 } from '@shared/types';
 import { IPC } from '@shared/ipc';
+import type { Room, RoundMode } from '@shared/roundtable';
 import { MODEL_CATALOG, PROVIDER_ORDER } from '@shared/models';
 import { importableKey, openKeyPortal, providerStatus, startCliLogin } from './auth/login-flows';
 import { abortChat, refreshModels, runChat, testProvider } from './providers/registry';
@@ -31,6 +32,15 @@ import {
   startTerminal,
   writeTerminal,
 } from './agents/terminal';
+import { abortRoom, isRunning, runRound, totalsFor } from './roundtable/engine';
+import {
+  createRoom,
+  deleteRoom,
+  getRoom,
+  listRooms,
+  roomToMarkdown,
+  saveRoom,
+} from './roundtable/store';
 import { CONFIG_DIR, DATA_DIR } from './store/paths';
 import { createLogger } from './util/logger';
 
@@ -40,6 +50,12 @@ const log = createLogger('ipc');
 function assertProvider(value: unknown): ProviderId {
   if (value === 'glm' || value === 'anthropic' || value === 'openai') return value;
   throw new Error(`Unknown provider: ${String(value)}`);
+}
+
+function assertRoundMode(value: unknown): RoundMode {
+  const modes = ['parallel', 'sequential', 'critique', 'synthesis', 'direct'];
+  if (typeof value === 'string' && modes.includes(value)) return value as RoundMode;
+  throw new Error(`Unknown round mode: ${String(value)}`);
 }
 
 function assertTransport(value: unknown): Transport {
@@ -189,6 +205,78 @@ export function registerIpcHandlers(getWindow: () => BrowserWindow | null): void
   );
   ipcMain.handle(IPC.termKill, (_event, id: unknown) => killTerminal(String(id)));
   ipcMain.handle(IPC.termList, () => listTerminals());
+
+  /* ---------------------------------------------------------- roundtable -- */
+
+  ipcMain.handle(IPC.roomList, () => listRooms());
+  ipcMain.handle(IPC.roomGet, (_event, id: unknown) => getRoom(String(id)));
+  ipcMain.handle(IPC.roomCreate, (_event, topic: unknown) =>
+    createRoom({ topic: String(topic ?? '').slice(0, 4000) }),
+  );
+  ipcMain.handle(IPC.roomUpdate, (_event, room: Room) => saveRoom(room));
+  ipcMain.handle(IPC.roomDelete, (_event, id: unknown) => {
+    deleteRoom(String(id));
+    return listRooms();
+  });
+
+  ipcMain.handle(
+    IPC.roomRun,
+    async (
+      event,
+      input: { roomId: string; mode: RoundMode; message: string; seatIds?: string[] },
+    ) => {
+      const sender = event.sender;
+      const emit = (roundtableEvent: unknown) => {
+        if (!sender.isDestroyed()) sender.send(IPC.roomEvent, roundtableEvent);
+      };
+      // Not awaited: a round can run for minutes, and the renderer follows it
+      // through room:event. Awaiting here would block the IPC channel.
+      void runRound(
+        {
+          roomId: String(input.roomId),
+          mode: assertRoundMode(input.mode),
+          message: String(input.message ?? ''),
+          seatIds: Array.isArray(input.seatIds) ? input.seatIds.map(String) : undefined,
+        },
+        emit,
+      );
+      return { accepted: true };
+    },
+  );
+
+  ipcMain.handle(IPC.roomAbort, (_event, id: unknown) => abortRoom(String(id)));
+
+  ipcMain.handle(IPC.roomClose, (_event, id: unknown) => {
+    const room = getRoom(String(id));
+    if (!room) return null;
+    abortRoom(room.id);
+    room.status = 'closed';
+    return saveRoom(room);
+  });
+
+  ipcMain.handle('room:totals', (_event, id: unknown) => {
+    const room = getRoom(String(id));
+    return room ? { totals: totalsFor(room), running: isRunning(room.id) } : null;
+  });
+
+  ipcMain.handle(IPC.roomExport, async (_event, id: unknown) => {
+    const room = getRoom(String(id));
+    if (!room) return { saved: false };
+
+    const window = getWindow();
+    const options = {
+      title: 'Export discussion',
+      defaultPath: `${room.title.replace(/[^\w\d -]/g, '').trim() || 'discussion'}.md`,
+      filters: [{ name: 'Markdown', extensions: ['md'] }],
+    };
+    const result = window
+      ? await dialog.showSaveDialog(window, options)
+      : await dialog.showSaveDialog(options);
+    if (result.canceled || !result.filePath) return { saved: false };
+
+    await writeFile(result.filePath, roomToMarkdown(room), 'utf8');
+    return { saved: true, path: result.filePath };
+  });
 
   /* ---------------------------------------------------------------- misc -- */
 

@@ -28,6 +28,11 @@ import {
   teardownChat,
 } from './views/chat';
 import { renderLogin } from './views/login';
+import {
+  buildRoundtableToolbar,
+  renderRoundtable,
+  teardownRoundtable,
+} from './views/roundtable';
 import { renderSettings } from './views/settings';
 
 /**
@@ -140,6 +145,7 @@ function mountView(force: boolean): void {
   if (viewChanged) {
     if (mounted.view === 'chat') teardownChat();
     if (mounted.view === 'agents') teardownAgents();
+    if (mounted.view === 'roundtable') teardownRoundtable();
   }
 
   // Only a shortcut for an already-mounted chat view: on the first (forced)
@@ -157,6 +163,9 @@ function mountView(force: boolean): void {
   switch (state.view) {
     case 'chat':
       renderChat(viewEl);
+      break;
+    case 'roundtable':
+      renderRoundtable(viewEl);
       break;
     case 'agents':
       renderAgents(viewEl);
@@ -190,6 +199,7 @@ function paintSidebar(): void {
   const rail = h('nav', { class: 'rail', attrs: { role: 'tablist' } });
   const items: Array<[View, string, Parameters<typeof icon>[0]]> = [
     ['chat', 'Chat', 'chat'],
+    ['roundtable', 'Room', 'users'],
     ['agents', 'Agents', 'terminal'],
     ['login', 'Login', 'key'],
   ];
@@ -340,6 +350,11 @@ function paintTopbar(): void {
       );
       break;
     }
+    case 'roundtable':
+      topbarEl.appendChild(h('span', { class: 'topbar-title', text: 'Roundtable' }));
+      topbarEl.appendChild(h('span', { class: 'spacer' }));
+      for (const control of buildRoundtableToolbar()) topbarEl.appendChild(control);
+      break;
     case 'agents':
       topbarEl.appendChild(h('span', { class: 'topbar-title', text: 'Agent terminals' }));
       topbarEl.appendChild(h('span', { class: 'spacer' }));
@@ -401,6 +416,9 @@ function handleNavigate(route: string): void {
       break;
     case 'view-login':
       update({ view: 'login' });
+      break;
+    case 'view-roundtable':
+      update({ view: 'roundtable' });
       break;
     case 'export':
       void exportCurrent();

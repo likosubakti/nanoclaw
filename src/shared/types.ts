@@ -92,7 +92,16 @@ export type StreamEvent =
   | { type: 'start'; streamId: string }
   | { type: 'reasoning'; streamId: string; text: string }
   | { type: 'text'; streamId: string; text: string }
-  | { type: 'tool'; streamId: string; name: string; detail?: string }
+  | {
+      type: 'tool';
+      streamId: string;
+      name: string;
+      detail?: string;
+      /** Search terms, when the tool was a web search. */
+      query?: string;
+      /** Page fetched, when the tool was a fetch. The UI links to it. */
+      url?: string;
+    }
   | { type: 'session'; streamId: string; sessionId: string }
   | { type: 'usage'; streamId: string; inputTokens?: number; outputTokens?: number }
   | { type: 'done'; streamId: string; finishReason?: string; durationMs: number }

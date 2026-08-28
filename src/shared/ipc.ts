@@ -44,6 +44,18 @@ export const IPC = {
   termList: 'term:list',
   termEvent: 'term:event',
 
+  // roundtable
+  roomList: 'room:list',
+  roomGet: 'room:get',
+  roomCreate: 'room:create',
+  roomUpdate: 'room:update',
+  roomDelete: 'room:delete',
+  roomExport: 'room:export',
+  roomRun: 'room:run',
+  roomAbort: 'room:abort',
+  roomClose: 'room:close',
+  roomEvent: 'room:event',
+
   // misc
   diagnostics: 'app:diagnostics',
   pickDirectory: 'app:pick-directory',
