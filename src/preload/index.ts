@@ -46,7 +46,7 @@ const api = {
     importable: (
       provider: ProviderId,
     ): Promise<{ masked: string; source: string } | null> =>
-      ipcRenderer.invoke('auth:importable', provider),
+      ipcRenderer.invoke(IPC.authImportable, provider),
     importFromCli: (
       provider: ProviderId,
     ): Promise<{ imported: boolean; source?: string; status: ProviderStatus }> =>
@@ -123,7 +123,7 @@ const api = {
     abort: (id: string): Promise<boolean> => ipcRenderer.invoke(IPC.roomAbort, id),
     close: (id: string): Promise<Room | null> => ipcRenderer.invoke(IPC.roomClose, id),
     totals: (id: string): Promise<{ totals: RoomTotals; running: boolean } | null> =>
-      ipcRenderer.invoke('room:totals', id),
+      ipcRenderer.invoke(IPC.roomTotals, id),
     onEvent: (handler: (event: RoundtableEvent) => void): (() => void) => {
       const listener = (_e: unknown, event: RoundtableEvent) => handler(event);
       ipcRenderer.on(IPC.roomEvent, listener);

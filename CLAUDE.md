@@ -14,13 +14,14 @@ Run these directly — don't tell the user to run them.
 npm run dev          # esbuild watch + auto-restarting Electron
 npm test             # unit tests (node:test via scripts/test.mjs)
 npm run typecheck    # tsc --noEmit
+npm run check:wiring # every IPC channel, bridge method and event variant is connected
 npm run build        # production bundles into dist/
 npm run icons        # regenerate resources/icons
 npm run dist         # AppImage / deb / tar.gz into release/ (rpm: npm run dist:rpm)
 npm run install:desktop   # build + install the launcher entry
 ```
 
-Always run `npm run typecheck && npm test` before committing.
+Always run `npm run typecheck && npm run check:wiring && npm test` before committing.
 
 ## Key files
 

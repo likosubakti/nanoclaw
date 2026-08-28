@@ -23,6 +23,7 @@
     "dev": "node scripts/dev.mjs",
     "start": "npm run build && electron .",
     "typecheck": "tsc --noEmit",
+    "check:wiring": "node scripts/check-wiring.mjs",
     "test": "node scripts/test.mjs",
     "icons": "node scripts/gen-icons.mjs",
     "dist": "npm run build && electron-builder --linux",

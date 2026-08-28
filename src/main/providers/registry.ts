@@ -30,7 +30,14 @@ const cliAdapters: Record<ProviderId, ProviderAdapter> = {
 };
 
 export function adapterFor(provider: ProviderId, transport: Transport): ProviderAdapter {
-  return transport === 'cli' ? cliAdapters[provider] : apiAdapters[provider];
+  const adapter = transport === 'cli' ? cliAdapters[provider] : apiAdapters[provider];
+  // Defence in depth. Inputs are validated at the IPC boundary, but a stored
+  // room written by an older build could still name a provider we dropped, and
+  // "cannot read properties of undefined" is a useless thing to show a user.
+  if (!adapter) {
+    throw new Error(`No adapter for provider "${provider}" over "${transport}".`);
+  }
+  return adapter;
 }
 
 /* ---------------------------------------------------------- streaming ----- */

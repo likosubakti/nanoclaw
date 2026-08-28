@@ -18,6 +18,7 @@ export const IPC = {
   authOpenPortal: 'auth:open-portal',
   authCliLogin: 'auth:cli-login',
   authTest: 'auth:test',
+  authImportable: 'auth:importable',
 
   // models
   modelsList: 'models:list',
@@ -55,6 +56,7 @@ export const IPC = {
   roomAbort: 'room:abort',
   roomClose: 'room:close',
   roomEvent: 'room:event',
+  roomTotals: 'room:totals',
 
   // telegram
   telegramStatus: 'telegram:status',

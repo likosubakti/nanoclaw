@@ -22,6 +22,11 @@ jobs:
       - name: Typecheck
         run: npm run typecheck
 
+      # Catches seams TypeScript cannot: a channel with no caller, a bridge
+      # method with no UI, an event variant nobody renders.
+      - name: Check wiring
+        run: npm run check:wiring
+
       - name: Test
         run: npm test
 

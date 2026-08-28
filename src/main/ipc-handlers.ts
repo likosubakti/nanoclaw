@@ -33,6 +33,7 @@ import {
   writeTerminal,
 } from './agents/terminal';
 import { abortRoom, isRunning, runRound, totalsFor } from './roundtable/engine';
+import { sanitizeRoom } from './roundtable/validate';
 import {
   createRoom,
   deleteRoom,
@@ -100,7 +101,7 @@ export function registerIpcHandlers(getWindow: () => BrowserWindow | null): void
   });
 
   // Returns what *could* be imported so the UI can ask before doing it.
-  ipcMain.handle('auth:importable', (_event, provider: unknown) => {
+  ipcMain.handle(IPC.authImportable, (_event, provider: unknown) => {
     const found = importableKey(assertProvider(provider));
     return found ? { masked: found.masked, source: found.source } : null;
   });
@@ -214,7 +215,13 @@ export function registerIpcHandlers(getWindow: () => BrowserWindow | null): void
   ipcMain.handle(IPC.roomCreate, (_event, topic: unknown) =>
     createRoom({ topic: String(topic ?? '').slice(0, 4000) }),
   );
-  ipcMain.handle(IPC.roomUpdate, (_event, room: Room) => saveRoom(room));
+  ipcMain.handle(IPC.roomUpdate, (_event, room: Room) => {
+    // The renderer sends a whole Room; never trust it. Load the stored one by
+    // its id and fold only validated fields onto it.
+    const existing = getRoom(String(room?.id ?? ''));
+    if (!existing) throw new Error('Room not found.');
+    return saveRoom(sanitizeRoom(room, existing));
+  });
   ipcMain.handle(IPC.roomDelete, (_event, id: unknown) => {
     deleteRoom(String(id));
     return listRooms();
@@ -258,7 +265,7 @@ export function registerIpcHandlers(getWindow: () => BrowserWindow | null): void
     return saveRoom(room);
   });
 
-  ipcMain.handle('room:totals', (_event, id: unknown) => {
+  ipcMain.handle(IPC.roomTotals, (_event, id: unknown) => {
     const room = getRoom(String(id));
     return room ? { totals: totalsFor(room), running: isRunning(room.id) } : null;
   });

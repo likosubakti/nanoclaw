@@ -1,3 +1,4 @@
+import { modelsFor as catalogFor } from '@shared/models';
 import type {
   AppSettings,
   Conversation,
@@ -98,6 +99,23 @@ export function applyTheme(settings: AppSettings): void {
       : settings.theme;
   root.setAttribute('data-theme', theme);
   root.style.setProperty('--font-size', `${settings.fontSize}px`);
+}
+
+/**
+ * Models to offer for a provider.
+ *
+ * The built-in catalog goes stale as vendors ship models, so a list fetched
+ * from the provider wins when one has been pulled. Falls back to the catalog,
+ * which is what a user sees before they ever press Refresh.
+ */
+export function modelsForProvider(provider: ProviderId): ModelInfo[] {
+  const fetched = state.models.filter((m) => m.provider === provider);
+  return fetched.length > 0 ? fetched : catalogFor(provider);
+}
+
+/** Replaces the fetched list for one provider, leaving the others alone. */
+export function setFetchedModels(provider: ProviderId, models: ModelInfo[]): void {
+  update({ models: [...state.models.filter((m) => m.provider !== provider), ...models] });
 }
 
 export function statusFor(provider: ProviderId): ProviderStatus | undefined {

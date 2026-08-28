@@ -5,11 +5,19 @@ import {
   PROVIDER_CLI,
   PROVIDER_LABELS,
   PROVIDER_ORDER,
-  modelsFor,
 } from '@shared/models';
 import type { GlmEndpointPreset } from '@shared/types';
 import { clear, h, icon } from '../lib/dom';
-import { api, refreshStatuses, state, statusFor, toast, update } from '../state';
+import {
+  api,
+  modelsForProvider,
+  refreshStatuses,
+  setFetchedModels,
+  state,
+  statusFor,
+  toast,
+  update,
+} from '../state';
 import { openLoginTerminal } from './agent';
 
 /**
@@ -413,7 +421,7 @@ function actionRow(provider: ProviderId, transport: Transport): HTMLElement {
     'Test connection',
   );
 
-  const models = modelsFor(provider);
+  const models = modelsForProvider(provider);
   const modelSelect = h(
     'select',
     {
@@ -441,6 +449,39 @@ function actionRow(provider: ProviderId, transport: Transport): HTMLElement {
     ),
   );
 
+  const refreshButton = h(
+    'button',
+    {
+      class: 'btn ghost icon',
+      title: 'Fetch the current model list from this provider',
+      on: {
+        click: async () => {
+          clear(result);
+          result.appendChild(
+            h('div', { class: 'note' }, h('span', { class: 'spinner' }), ' Fetching models…'),
+          );
+          const fetched = await api.models.refresh(provider);
+          clear(result);
+          if (fetched.length === 0) {
+            // A provider that cannot list models is not worth shouting about;
+            // the built-in catalog still works.
+            result.appendChild(
+              h('div', {
+                class: 'note warn',
+                text: 'This provider did not return a model list. The built-in catalog is still in use.',
+              }),
+            );
+            return;
+          }
+          setFetchedModels(provider, fetched);
+          toast(`${fetched.length} models loaded from ${PROVIDER_LABELS[provider]}.`, 'ok');
+          rerender();
+        },
+      },
+    },
+    icon('refresh', 14),
+  );
+
   return h(
     'div',
     {},
@@ -449,6 +490,7 @@ function actionRow(provider: ProviderId, transport: Transport): HTMLElement {
       { class: 'row wrap' },
       h('span', { class: 'label-text', style: { margin: '0' }, text: 'Default model' }),
       modelSelect,
+      refreshButton,
       h('span', { class: 'spacer' }),
       testButton,
     ),

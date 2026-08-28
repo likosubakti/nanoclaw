@@ -90,6 +90,16 @@ export async function runRound(input: RunRoundInput, emit: Emit): Promise<Room |
     emit({ type: 'room-error', roomId: room.id, message: 'A round is already running.' });
     return room;
   }
+  // Enforced here rather than only in the UI: Telegram can start rounds too,
+  // and a closed discussion must stay closed whatever asks.
+  if (room.status === 'closed') {
+    emit({
+      type: 'room-error',
+      roomId: room.id,
+      message: 'This discussion is closed. Open a new one to continue.',
+    });
+    return room;
+  }
 
   const controller = new AbortController();
   running.set(room.id, controller);

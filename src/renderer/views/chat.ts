@@ -1,9 +1,10 @@
 import type { ChatMessage, Conversation, ProviderId, StreamEvent } from '@shared/types';
-import { PROVIDER_LABELS, PROVIDER_ORDER, modelsFor } from '@shared/models';
+import { PROVIDER_LABELS, PROVIDER_ORDER } from '@shared/models';
 import { clear, h, icon } from '../lib/dom';
 import { renderMarkdown } from '../lib/markdown';
 import {
   api,
+  modelsForProvider,
   providerInitials,
   refreshConversations,
   state,
@@ -99,7 +100,7 @@ export function buildChatToolbar(): HTMLElement[] {
     ),
   );
 
-  const models = modelsFor(provider);
+  const models = modelsForProvider(provider);
   const currentModel = conversation?.model ?? state.settings.providers[provider].defaultModel;
   // A model saved earlier may not be in the catalog; keep it selectable.
   const options = models.some((m) => m.id === currentModel)
@@ -371,7 +372,6 @@ function buildComposer(): HTMLElement {
       text: state.settings.sendOnEnter ? 'Enter to send' : 'Ctrl+Enter to send',
     }),
     h('span', { class: 'spacer' }),
-    h('span', { class: 'hint-transport', text: '' }),
   );
 
   const composer = h(

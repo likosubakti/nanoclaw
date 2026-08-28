@@ -12,10 +12,10 @@ import type {
 } from '@shared/roundtable';
 import { ROLE_PRESETS, ROUND_MODES, moderatorCanResearch, seatCanResearch } from '@shared/roundtable';
 import type { ProviderId, Transport } from '@shared/types';
-import { PROVIDER_LABELS, PROVIDER_ORDER, modelsFor } from '@shared/models';
+import { PROVIDER_LABELS, PROVIDER_ORDER } from '@shared/models';
 import { clear, h, icon } from '../lib/dom';
 import { renderMarkdown } from '../lib/markdown';
-import { api, toast, update } from '../state';
+import { api, modelsForProvider, toast, update } from '../state';
 
 /**
  * The Roundtable: several backends discussing one topic, with their thinking
@@ -154,6 +154,25 @@ export function buildRoundtableToolbar(): HTMLElement[] {
         'Stop',
       ),
     );
+  }
+
+  // The owner chose "runs until consensus or I close it", so closing has to be
+  // reachable — it was wired through main and the preload but had no control.
+  if (room.status !== 'closed') {
+    controls.push(
+      h(
+        'button',
+        {
+          class: 'btn',
+          title: 'End this discussion. Nothing further runs; the transcript is kept.',
+          on: { click: () => void closeRoom() },
+        },
+        icon('check', 14),
+        'Close',
+      ),
+    );
+  } else {
+    controls.push(h('span', { class: 'badge ok', text: 'closed' }));
   }
 
   controls.push(
@@ -447,7 +466,7 @@ function backendPickers(
 
   const fillModels = (provider: ProviderId, selected: string) => {
     clear(modelSelect);
-    const models = modelsFor(provider);
+    const models = modelsForProvider(provider);
     const options = models.some((m) => m.id === selected)
       ? models
       : [{ id: selected, provider, label: selected }, ...models];
@@ -472,7 +491,7 @@ function backendPickers(
           const provider = (event.target as HTMLSelectElement).value as ProviderId;
           // The old model belongs to the old provider, so fall back to that
           // provider's default rather than sending a model it will reject.
-          const model = modelsFor(provider)[0]?.id ?? current.model;
+          const model = modelsForProvider(provider)[0]?.id ?? current.model;
           fillModels(provider, model);
           onChange({ ...current, provider, model });
         },
@@ -1151,6 +1170,10 @@ function autosize(textarea: HTMLTextAreaElement): void {
 
 async function send(): Promise<void> {
   if (!room || !composerEl || roundRunning) return;
+  if (room.status === 'closed') {
+    toast('This discussion is closed. Open a new one to keep going.', 'error');
+    return;
+  }
 
   const message = composerEl.value.trim();
   const needsMessage = selectedMode !== 'critique' && selectedMode !== 'synthesis';
@@ -1169,6 +1192,15 @@ async function stopRound(): Promise<void> {
   if (!room) return;
   await api.rooms.abort(room.id);
   toast('Stopping — seats will finish their current output.', 'info');
+}
+
+async function closeRoom(): Promise<void> {
+  if (!room) return;
+  const closed = await api.rooms.close(room.id);
+  if (closed) room = closed;
+  roundRunning = false;
+  toast('Discussion closed. The transcript is kept and can still be exported.', 'ok');
+  update({});
 }
 
 async function exportRoom(): Promise<void> {

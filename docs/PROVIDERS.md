@@ -41,7 +41,8 @@ OpenAI-compatible `POST /chat/completions`, with two GLM-specific details:
 ### Models
 
 `glm-4.6` (flagship, 200K context), `glm-4.5`, `glm-4.5-air`, `glm-4.5-flash` (free tier),
-`glm-4v` (vision). Settings → *Test connection* also refreshes the list from `/models`.
+`glm-4v` (vision). The refresh button beside the model picker on the Login screen replaces
+this list with whatever the provider currently returns from `/models`.
 
 ---
 
