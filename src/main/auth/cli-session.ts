@@ -47,6 +47,10 @@ const STATUS_ARGS: Record<ProviderId, string[] | null> = {
   glm: null,
   anthropic: ['auth', 'status', '--json'],
   openai: ['login', 'status'],
+  // Kimi Code has `login` and `logout` but no status command, so there is
+  // nothing to ask. Detection falls back to the credential file, which is the
+  // path this module was already built to degrade to.
+  kimi: null,
 };
 
 /**

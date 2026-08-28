@@ -6,7 +6,7 @@ and sit them all around a table to argue a question out.
 
 GLM has no first-party desktop client on Linux. GLM Studio fills that gap, and since it had to
 solve authentication and streaming anyway, it does the same for Claude and OpenAI: one app, one
-login screen, three backends.
+login screen, four backends.
 
 ![Chat view](docs/images/chat.png)
 
@@ -14,7 +14,7 @@ login screen, three backends.
 
 ## What it does
 
-**Chat** — Streaming conversations against any of the three backends. Switch model or backend from
+**Chat** — Streaming conversations against any of the four backends. Switch model or backend from
 the header. Markdown, tables, syntax-preserving code blocks with copy buttons, and a collapsible
 panel for reasoning models that expose their thinking.
 

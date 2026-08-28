@@ -58,7 +58,7 @@ const log = createLogger('ipc');
 
 /** Anything a renderer sends is untrusted input; validate before it reaches a store. */
 function assertProvider(value: unknown): ProviderId {
-  if (value === 'glm' || value === 'anthropic' || value === 'openai') return value;
+  if (value === 'glm' || value === 'anthropic' || value === 'openai' || value === 'kimi') return value;
   throw new Error(`Unknown provider: ${String(value)}`);
 }
 

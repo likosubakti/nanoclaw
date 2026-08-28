@@ -21,7 +21,7 @@ import { enrichedPath } from './cli-detect';
  * session the key is still passed rather than letting the run fail. This has to
  * agree with CliProvider.test(), which reports "ready" on exactly that basis.
  */
-function shouldPassKey(provider: 'anthropic' | 'openai', settings: AppSettings): boolean {
+function shouldPassKey(provider: 'anthropic' | 'openai' | 'kimi', settings: AppSettings): boolean {
   if (!resolveApiKey(provider)) return false;
   if (settings.providers[provider].transport === 'api') return true;
   return !readCliCredentials(provider).loggedIn;
@@ -77,6 +77,23 @@ export function buildCliEnv(provider: ProviderId): NodeJS.ProcessEnv {
       if (base && base !== resolveBaseUrl('openai', settings)) env.OPENAI_BASE_URL = base;
       break;
     }
+
+    case 'kimi': {
+      // Another vendor's key has no business in this child, and leaving one
+      // here is not harmless: Kimi Code loads plugins and MCP servers of the
+      // user's choosing, and a stray key is the thing they would reach for.
+      delete env.ANTHROPIC_API_KEY;
+      delete env.ANTHROPIC_AUTH_TOKEN;
+      delete env.OPENAI_API_KEY;
+
+      // KIMI_API_KEY and KIMI_BASE_URL are the names Moonshot's own client
+      // reads, so setting them is how an API key reaches the CLI at all.
+      if (shouldPassKey('kimi', settings)) {
+        env.KIMI_API_KEY = resolveApiKey('kimi')!.key;
+        env.KIMI_BASE_URL = resolveBaseUrl('kimi', settings);
+      }
+      break;
+    }
   }
 
   return env;
@@ -96,5 +113,9 @@ export function describeCliEnv(provider: ProviderId): string {
       return resolveApiKey('openai')
         ? 'Codex CLI with your API key'
         : 'Codex CLI with its own signed-in session';
+    case 'kimi':
+      return resolveApiKey('kimi')
+        ? 'Kimi Code CLI with your API key'
+        : 'Kimi Code CLI with its own signed-in session';
   }
 }

@@ -4,8 +4,8 @@ import { PROVIDER_CLI } from '@shared/models';
 import { readJsonLines } from '../net/sse';
 import { buildCliEnv } from '../agents/env';
 import { CLI_INSTALL_HINT, detectCli, probeCapabilities } from '../agents/cli-detect';
-import { claudeArgs, discussionSystemPrompt } from './cli-args';
-import { createClaudeParser, createCodexParser } from './cli-stream';
+import { claudeArgs, discussionSystemPrompt, kimiAgentSpec, kimiArgs } from './cli-args';
+import { createClaudeParser, createCodexParser, createKimiParser } from './cli-stream';
 import { cliSessionState } from '../auth/cli-credentials';
 import { loadSettings } from '../store/settings';
 import { createLogger } from '../util/logger';
@@ -48,9 +48,23 @@ export class CliProvider implements ProviderAdapter {
     const prompt = lastUserMessage(req);
     if (!prompt) throw new Error('Nothing to send: the last message is empty.');
 
-    const isCodex = PROVIDER_CLI[this.provider].command === 'codex';
-    const capabilities = await probeCapabilities(status.path!);
-    const args = isCodex ? codexArgs(req) : claudeArgs(req, capabilities);
+    const command = PROVIDER_CLI[this.provider].command;
+    const isCodex = command === 'codex';
+    const isKimi = command === 'kimi-code';
+    const policy = req.toolPolicy ?? 'full';
+
+    // Kimi restricts its toolset through a generated agent spec rather than a
+    // flag, so a discussion turn needs two temporary files written first.
+    const kimiSpec = isKimi && policy !== 'full'
+      ? await writeKimiAgentSpec(discussionSystemPrompt(req.systemPrompt?.trim(), policy), policy)
+      : null;
+
+    const capabilities = isKimi ? null : await probeCapabilities(status.path!);
+    const args = isKimi
+      ? kimiArgs(req, { agentFile: kimiSpec?.agentFile })
+      : isCodex
+        ? codexArgs(req, policy)
+        : claudeArgs(req, capabilities!);
 
     log.debug(`spawning ${status.path} ${args.join(' ')}`);
 
@@ -92,9 +106,6 @@ export class CliProvider implements ProviderAdapter {
     });
 
     // The prompt goes over stdin so it never appears in the process table.
-    // Codex has no flag to replace its system prompt, so a discussion turn
-    // carries its framing in the prompt itself.
-    const policy = req.toolPolicy ?? 'full';
     const system = req.systemPrompt?.trim();
     // Codex has no flag to replace its system prompt, so a discussion turn
     // carries its framing — and the caller's, which names the seat, its role,
@@ -110,7 +121,11 @@ export class CliProvider implements ProviderAdapter {
     child.stdin.end();
 
     try {
-      const parse = isCodex ? createCodexParser(ctx.streamId) : createClaudeParser(ctx.streamId);
+      const parse = isKimi
+        ? createKimiParser(ctx.streamId)
+        : isCodex
+          ? createCodexParser(ctx.streamId)
+          : createClaudeParser(ctx.streamId);
       for await (const event of readJsonLines(child.stdout)) {
         for (const emitted of parse(event)) ctx.emit(emitted);
       }
@@ -126,6 +141,7 @@ export class CliProvider implements ProviderAdapter {
       ctx.signal.removeEventListener('abort', onAbort);
       if (killTimer) clearTimeout(killTimer);
       if (!child.killed) child.kill();
+      kimiSpec?.cleanup();
     }
   }
 
@@ -176,12 +192,59 @@ export class CliProvider implements ProviderAdapter {
 
 /* --------------------------------------------------------- argument sets -- */
 
-function codexArgs(req: ChatRequest): string[] {
+function codexArgs(req: ChatRequest, policy: 'none' | 'research' | 'full'): string[] {
   const args = ['exec', '--json', '--skip-git-repo-check'];
   if (req.model) args.push('--model', req.model);
+
+  if (policy !== 'full') {
+    // Codex has no flag that empties the toolset, but it does have a sandbox
+    // policy, and read-only is the strongest of the three: the model may still
+    // reach for the shell, but nothing it runs can modify the user's files.
+    // `--ignore-user-config` then stops a permissive ~/.codex/config.toml from
+    // widening that back out, the same role `--restricted` plays for Claude.
+    args.push('--sandbox', 'read-only', '--ignore-user-config');
+  }
+
   // Read the prompt from stdin.
   args.push('-');
   return args;
+}
+
+
+/**
+ * Writes the throwaway agent specification a restricted Kimi turn runs under.
+ *
+ * Kimi takes the system prompt as a *path*, not a string, so both the prompt
+ * and the spec that points at it have to exist on disk for the length of the
+ * turn. They go in a private temp directory and are removed in the caller's
+ * `finally`, whether the turn succeeded, failed, or was stopped.
+ */
+async function writeKimiAgentSpec(
+  systemPrompt: string,
+  policy: 'none' | 'research',
+): Promise<{ agentFile: string; cleanup: () => void }> {
+  const { mkdtemp, writeFile } = await import('node:fs/promises');
+  const { rmSync } = await import('node:fs');
+  const os = await import('node:os');
+  const path = await import('node:path');
+
+  const dir = await mkdtemp(path.join(os.tmpdir(), 'glm-studio-kimi-'));
+  const promptFile = path.join(dir, 'system.md');
+  const agentFile = path.join(dir, 'agent.yaml');
+
+  await writeFile(promptFile, systemPrompt, 'utf8');
+  await writeFile(agentFile, kimiAgentSpec(promptFile, policy), 'utf8');
+
+  return {
+    agentFile,
+    cleanup: () => {
+      try {
+        rmSync(dir, { recursive: true, force: true });
+      } catch {
+        // A leftover temp directory is not worth failing a finished turn over.
+      }
+    },
+  };
 }
 
 /* ------------------------------------------------------------- helpers ---- */

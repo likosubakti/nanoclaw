@@ -427,7 +427,7 @@ export interface RoomTotals {
   rounds: number;
 }
 
-/** Default roster: the five voices, one per provider x transport combination. */
+/** Default roster: one voice per provider, plus a CLI seat where the vendor has one. */
 export function defaultSeats(models: Record<ProviderId, string>): Seat[] {
   return [
     {
@@ -474,6 +474,26 @@ export function defaultSeats(models: Record<ProviderId, string>): Seat[] {
       model: models.openai,
       enabled: true,
       color: '#c4b5fd',
+    },
+    {
+      id: 'kimi-api',
+      name: 'Kimi',
+      provider: 'kimi',
+      transport: 'api',
+      model: models.kimi,
+      enabled: true,
+      color: '#2dd4bf',
+    },
+    {
+      id: 'kimi-cli',
+      name: 'Kimi Code',
+      provider: 'kimi',
+      transport: 'cli',
+      model: models.kimi,
+      // Off by default: seven seats is a crowd, and this one needs the Kimi
+      // Code CLI installed. Enable it in the seat editor.
+      enabled: false,
+      color: '#5eead4',
     },
   ];
 }

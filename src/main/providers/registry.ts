@@ -12,6 +12,7 @@ import { createLogger } from '../util/logger';
 import { AnthropicProvider } from './anthropic';
 import { CliProvider } from './cli';
 import { GlmProvider } from './glm';
+import { KimiProvider } from './kimi';
 import { OpenAiProvider } from './openai';
 import { MissingCredentialsError, type ProviderAdapter } from './types';
 
@@ -21,12 +22,14 @@ const apiAdapters: Record<ProviderId, ProviderAdapter> = {
   glm: new GlmProvider(),
   anthropic: new AnthropicProvider(),
   openai: new OpenAiProvider(),
+  kimi: new KimiProvider(),
 };
 
 const cliAdapters: Record<ProviderId, ProviderAdapter> = {
   glm: new CliProvider('glm'),
   anthropic: new CliProvider('anthropic'),
   openai: new CliProvider('openai'),
+  kimi: new CliProvider('kimi'),
 };
 
 export function adapterFor(provider: ProviderId, transport: Transport): ProviderAdapter {

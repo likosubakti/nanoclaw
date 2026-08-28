@@ -3,7 +3,7 @@
  * Keep this file free of Node and DOM imports — it is bundled into all three.
  */
 
-export type ProviderId = 'glm' | 'anthropic' | 'openai';
+export type ProviderId = 'glm' | 'anthropic' | 'openai' | 'kimi';
 
 /**
  * How a request reaches the model.
@@ -128,8 +128,8 @@ export interface ProviderSettings {
   enabled: boolean;
   /** Overrides the built-in default; blank means "use the default". */
   baseUrl: string;
-  /** Region/endpoint preset. GLM only; ignored elsewhere. */
-  endpointPreset?: GlmEndpointPreset;
+  /** Region/endpoint preset. GLM and Kimi only; ignored elsewhere. */
+  endpointPreset?: EndpointPreset;
   defaultModel: string;
   transport: Transport;
   /** Extra headers, e.g. for a corporate gateway. */
@@ -139,6 +139,16 @@ export interface ProviderSettings {
 }
 
 export type GlmEndpointPreset = 'zai-global' | 'zai-coding' | 'bigmodel-cn' | 'custom';
+
+/**
+ * Kimi has the same three-surface split as GLM, and for the same reason: the
+ * international and mainland platforms are separate products with separate
+ * accounts, and the subscription surface is a third endpoint again. The base
+ * URLs are taken from Moonshot's own CLI (kimi_cli/auth/platforms.py).
+ */
+export type KimiEndpointPreset = 'moonshot-global' | 'kimi-coding' | 'moonshot-cn' | 'custom';
+
+export type EndpointPreset = GlmEndpointPreset | KimiEndpointPreset;
 
 export interface TelegramSettings {
   enabled: boolean;

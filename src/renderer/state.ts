@@ -155,5 +155,5 @@ export function relativeTime(timestamp: number): string {
 }
 
 export function providerInitials(provider: ProviderId): string {
-  return { glm: 'GLM', anthropic: 'CL', openai: 'AI' }[provider];
+  return { glm: 'GLM', anthropic: 'CL', openai: 'AI', kimi: 'KM' }[provider];
 }

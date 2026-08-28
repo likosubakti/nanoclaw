@@ -32,7 +32,7 @@ Always run `npm run typecheck && npm run check:wiring && npm test` before commit
 | `src/shared/ipc.ts` | IPC channel names |
 | `src/main/providers/registry.ts` | Adapter selection, abort handling, error mapping |
 | `src/main/providers/cli.ts` | CLI transport — how subscription logins work |
-| `src/main/providers/cli-stream.ts` | Parsers for both CLIs' JSON-lines output |
+| `src/main/providers/cli-stream.ts` | Parsers for all three CLIs' JSON-lines output |
 | `src/main/auth/cli-session.ts` | Asks each CLI whether it is signed in |
 | `src/main/agents/env.ts` | Environment handed to spawned CLIs |
 | `src/main/agents/terminal.ts` | pty sessions, with pipe fallback |
@@ -50,7 +50,7 @@ Always run `npm run typecheck && npm run check:wiring && npm test` before commit
 ## Conventions
 
 - **No framework in the renderer.** Vanilla TS with the `h()` helper in `lib/dom.ts`.
-- **Provider × transport.** Three providers (`glm`, `anthropic`, `openai`) × two transports
+- **Provider × transport.** Four providers (`glm`, `anthropic`, `openai`, `kimi`) × two transports
   (`api`, `cli`). Every combination goes through `ProviderAdapter`.
 - **UI is data-driven from `PROVIDER_ORDER`.** Adding a provider to `shared/models.ts` makes it
   appear in the sidebar, login screen, and pickers automatically.
@@ -72,8 +72,11 @@ Always run `npm run typecheck && npm run check:wiring && npm test` before commit
 - **Validate anything arriving from the renderer** in `ipc-handlers.ts` before it reaches a store —
   see `assertProvider` / `assertTransport`.
 - **Never log credentials.** Use `redactHeaders` before logging any header map.
-- **`ANTHROPIC_API_KEY` must stay deleted** from the GLM child environment in `agents/env.ts`, or a
-  stray value in the user's shell profile silently bills their Anthropic account.
+- **`ANTHROPIC_API_KEY` must stay deleted** from the GLM and Kimi child environments in
+  `agents/env.ts`, or a stray value in the user's shell profile silently bills their Anthropic
+  account — and every new provider that spawns a CLI must delete the other vendors' keys too.
+- **Never seed a model id or context window you have not confirmed.** The picker's refresh control
+  exists so an absent entry is recoverable; an invented one is quietly wrong forever.
 - **A round must keep its lock until it returns, and must never save the room whole.** Releasing on
   abort let a second round start on a stale copy and destroy a transcript; saving whole erased a
   `closed` status and any seat edit made while the round ran — see `roundtable/round-plan.ts`.

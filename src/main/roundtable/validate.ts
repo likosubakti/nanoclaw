@@ -40,7 +40,7 @@ function str(value: unknown, limit: number, fallback = ''): string {
 }
 
 function provider(value: unknown, fallback: ProviderId): ProviderId {
-  return value === 'glm' || value === 'anthropic' || value === 'openai' ? value : fallback;
+  return value === 'glm' || value === 'anthropic' || value === 'openai' || value === 'kimi' ? value : fallback;
 }
 
 function transport(value: unknown, fallback: Transport): Transport {

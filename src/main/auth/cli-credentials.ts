@@ -139,6 +139,29 @@ function glmState(): CliCredentialState {
   return { loggedIn: false };
 }
 
+/**
+ * Kimi Code stores its OAuth session at ~/.kimi/credentials/kimi-code.json
+ * (KIMI_SHARE_DIR moves the directory). Only two fields are read — whether the
+ * file parses and whether it has expired. The tokens beside them are not this
+ * app's to touch, and unlike the other two CLIs there is no status command to
+ * ask instead.
+ */
+function kimiState(): CliCredentialState {
+  const shareDir = process.env.KIMI_SHARE_DIR || path.join(home, '.kimi');
+  const token = readJson<{ expires_at?: number; access_token?: string; scope?: string }>(
+    path.join(shareDir, 'credentials', 'kimi-code.json'),
+  );
+
+  if (!token?.access_token) return { loggedIn: false };
+
+  // expires_at is epoch seconds, as written by the CLI.
+  const expired = typeof token.expires_at === 'number' && token.expires_at * 1000 < Date.now();
+  if (expired) {
+    return { loggedIn: false, accountHint: 'session expired — run `kimi-code login`' };
+  }
+  return { loggedIn: true, accountHint: 'signed in with Kimi' };
+}
+
 function fileState(provider: ProviderId): CliCredentialState {
   switch (provider) {
     case 'anthropic':
@@ -147,6 +170,8 @@ function fileState(provider: ProviderId): CliCredentialState {
       return codexState();
     case 'glm':
       return glmState();
+    case 'kimi':
+      return kimiState();
   }
 }
 

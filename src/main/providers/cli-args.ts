@@ -121,3 +121,61 @@ export function discussionSystemPrompt(caller: string | undefined, policy: 'none
   return lines.join('\n');
 }
 
+
+/* ----------------------------------------------------------------- kimi -- */
+
+/**
+ * Argument construction for the Kimi Code CLI.
+ *
+ * Kimi's print mode emits whole messages rather than token deltas, which the
+ * stream parser already handles — it is the same path an older Claude Code
+ * build takes.
+ *
+ * Tool restriction works differently again: there is no `--tools` flag, but
+ * `--agent-file` replaces the whole agent specification, and a spec names its
+ * tools explicitly as an allowlist. So a discussion turn hands it a generated
+ * spec with the system prompt replaced and `tools` cut to nothing (chat) or to
+ * web search and fetch (research) — the same two policies as everywhere else.
+ */
+export function kimiArgs(
+  req: ChatRequest,
+  options: { agentFile?: string } = {},
+): string[] {
+  const args = ['--print', '--output-format', 'stream-json'];
+
+  if (req.model) args.push('--model', req.model);
+  // Thinking is a tri-state in Kimi: unset means "whatever the config says",
+  // so both branches are stated rather than only the on one.
+  args.push(req.thinking ? '--thinking' : '--no-thinking');
+  if (req.cwd) args.push('--work-dir', req.cwd);
+  if (options.agentFile) args.push('--agent-file', options.agentFile);
+
+  return args;
+}
+
+/** The two tool sets a generated Kimi agent spec may name. */
+export const KIMI_RESEARCH_TOOLS = ['kimi_cli.tools.web:SearchWeb', 'kimi_cli.tools.web:FetchURL'];
+
+/**
+ * A Kimi agent specification for a discussion turn.
+ *
+ * `tools` is an allowlist of fully-qualified tool classes, so an empty list is
+ * genuinely no tools — the same guarantee `--tools ""` gives Claude Code, and
+ * for the same reason: a discussant that can edit the user's files is not a
+ * discussant.
+ */
+export function kimiAgentSpec(
+  systemPromptPath: string,
+  policy: 'none' | 'research',
+): string {
+  const tools = policy === 'research' ? KIMI_RESEARCH_TOOLS : [];
+  return [
+    'version: 1',
+    'agent:',
+    '  name: ""',
+    `  system_prompt_path: ${JSON.stringify(systemPromptPath)}`,
+    `  tools: [${tools.map((t) => JSON.stringify(t)).join(', ')}]`,
+    '  subagents: {}',
+    '',
+  ].join('\n');
+}

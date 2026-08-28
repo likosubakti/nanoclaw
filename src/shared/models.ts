@@ -1,4 +1,4 @@
-import type { GlmEndpointPreset, ModelInfo, ProviderId } from './types';
+import type { GlmEndpointPreset, KimiEndpointPreset, ModelInfo, ProviderId } from './types';
 
 /**
  * Endpoint presets for GLM. Z.ai runs three surfaces with different billing:
@@ -30,19 +30,48 @@ export const GLM_ENDPOINTS: Record<
   },
 };
 
+/**
+ * Endpoint presets for Kimi (Moonshot AI) — the same three-surface split as
+ * GLM, for the same reason. These URLs are not guesses: they are the platform
+ * table inside Moonshot's own CLI (`kimi_cli/auth/platforms.py`), which is the
+ * authority on where its client actually points.
+ */
+export const KIMI_ENDPOINTS: Record<
+  Exclude<KimiEndpointPreset, 'custom'>,
+  { label: string; baseUrl: string; note: string }
+> = {
+  'moonshot-global': {
+    label: 'Moonshot — International',
+    baseUrl: 'https://api.moonshot.ai/v1',
+    note: 'Pay-as-you-go keys from platform.moonshot.ai',
+  },
+  'kimi-coding': {
+    label: 'Kimi Code — Subscription',
+    baseUrl: 'https://api.kimi.com/coding/v1',
+    note: 'The surface the Kimi Code CLI signs in to',
+  },
+  'moonshot-cn': {
+    label: 'Moonshot — Mainland China',
+    baseUrl: 'https://api.moonshot.cn/v1',
+    note: 'platform.moonshot.cn keys — a separate account from .ai',
+  },
+};
+
 export const DEFAULT_BASE_URLS: Record<ProviderId, string> = {
   glm: GLM_ENDPOINTS['zai-global'].baseUrl,
   anthropic: 'https://api.anthropic.com',
   openai: 'https://api.openai.com/v1',
+  kimi: KIMI_ENDPOINTS['moonshot-global'].baseUrl,
 };
 
 export const PROVIDER_LABELS: Record<ProviderId, string> = {
   glm: 'GLM (Z.ai)',
   anthropic: 'Claude',
   openai: 'OpenAI',
+  kimi: 'Kimi (Moonshot)',
 };
 
-export const PROVIDER_ORDER: ProviderId[] = ['glm', 'anthropic', 'openai'];
+export const PROVIDER_ORDER: ProviderId[] = ['glm', 'anthropic', 'openai', 'kimi'];
 
 /** The CLI each provider drives in agent mode. */
 export const PROVIDER_CLI: Record<ProviderId, { command: string; label: string; docs: string }> = {
@@ -51,6 +80,13 @@ export const PROVIDER_CLI: Record<ProviderId, { command: string; label: string; 
   glm: { command: 'claude', label: 'Claude Code → GLM', docs: 'https://docs.z.ai/scenario-example/develop-tools/claude' },
   anthropic: { command: 'claude', label: 'Claude Code', docs: 'https://docs.claude.com/en/docs/claude-code' },
   openai: { command: 'codex', label: 'Codex CLI', docs: 'https://developers.openai.com/codex/cli' },
+  // Unlike GLM, Kimi ships its own agent CLI with its own OAuth sign-in, so it
+  // does not need to borrow Claude Code.
+  kimi: {
+    command: 'kimi-code',
+    label: 'Kimi Code CLI',
+    docs: 'https://moonshotai.github.io/kimi-cli/',
+  },
 };
 
 /**
@@ -225,12 +261,54 @@ export const MODEL_CATALOG: ModelInfo[] = [
     contextWindow: 200_000,
     supportsThinking: true,
   },
+
+  // ---- Kimi (Moonshot) ---------------------------------------------------
+  // Only ids confirmed from Moonshot's own client and changelog are seeded
+  // here. Context windows are deliberately absent rather than invented — the
+  // refresh control beside the picker replaces this list with what the account
+  // actually returns from /models, including the per-model context length.
+  {
+    id: 'kimi-k2.6',
+    provider: 'kimi',
+    label: 'Kimi K2.6',
+    tier: 'flagship',
+    note: 'Flagship — supports preserved thinking across turns',
+    supportsThinking: true,
+    supportsVision: true,
+    recommended: true,
+  },
+  {
+    id: 'kimi-k2-thinking',
+    provider: 'kimi',
+    label: 'Kimi K2 Thinking',
+    tier: 'reasoning',
+    note: 'Always reasons; no way to switch thinking off',
+    supportsThinking: true,
+  },
+  {
+    id: 'kimi-k2.5',
+    provider: 'kimi',
+    label: 'Kimi K2.5',
+    tier: 'balanced',
+    note: 'Previous flagship generation',
+    supportsThinking: true,
+    supportsVision: true,
+  },
+  {
+    id: 'kimi-k2-turbo-preview',
+    provider: 'kimi',
+    label: 'Kimi K2 Turbo',
+    tier: 'fast',
+    note: 'Faster K2 variant',
+    supportsThinking: true,
+  },
 ];
 
 export const DEFAULT_MODELS: Record<ProviderId, string> = {
   glm: 'glm-4.6',
   anthropic: 'claude-opus-5',
   openai: 'gpt-5.1',
+  kimi: 'kimi-k2.6',
 };
 
 export function modelsFor(provider: ProviderId): ModelInfo[] {
@@ -267,6 +345,7 @@ export const API_KEY_PORTALS: Record<ProviderId, { url: string; label: string }>
   glm: { url: 'https://z.ai/manage-apikey/apikey-list', label: 'Z.ai API keys' },
   anthropic: { url: 'https://console.anthropic.com/settings/keys', label: 'Anthropic Console' },
   openai: { url: 'https://platform.openai.com/api-keys', label: 'OpenAI Platform' },
+  kimi: { url: 'https://platform.moonshot.ai/console/api-keys', label: 'Moonshot Platform' },
 };
 
 /** Environment variables imported automatically when no key is stored. */
@@ -274,4 +353,6 @@ export const ENV_KEY_NAMES: Record<ProviderId, string[]> = {
   glm: ['ZAI_API_KEY', 'Z_AI_API_KEY', 'ZHIPUAI_API_KEY', 'GLM_API_KEY'],
   anthropic: ['ANTHROPIC_API_KEY'],
   openai: ['OPENAI_API_KEY'],
+  // KIMI_API_KEY is the name Moonshot's own client reads.
+  kimi: ['KIMI_API_KEY', 'MOONSHOT_API_KEY'],
 };

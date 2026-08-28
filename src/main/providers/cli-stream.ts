@@ -224,6 +224,78 @@ export function createCodexParser(streamId: string): StreamParser {
   }, streamId);
 }
 
+/* ----------------------------------------------------------------- kimi -- */
+
+/**
+ * Kimi Code `--output-format stream-json`.
+ *
+ * It emits whole messages, not token deltas: the printer buffers content parts
+ * and flushes a complete `Message` at each step boundary. So there is nothing
+ * to deduplicate here — every assistant line is new content, and appending is
+ * correct where the other two parsers have to choose.
+ *
+ * Shape, from `kosong.message`:
+ *   {"role":"assistant",
+ *    "content":[{"type":"text","text":"…"},{"type":"think","think":"…"}],
+ *    "tool_calls":[{"type":"function","id":"…",
+ *                   "function":{"name":"…","arguments":"{…}"}}]}
+ */
+export function createKimiParser(streamId: string): StreamParser {
+  return makeParser((e, id) => {
+    const out: Emit[] = [];
+    if (e.role !== 'assistant') return out; // tool results and plans are not the reply
+
+    for (const part of Array.isArray(e.content) ? e.content : []) {
+      if (part?.type === 'text' && part.text) {
+        out.push({ type: 'text', streamId: id, text: part.text });
+      } else if (part?.type === 'think' && part.think) {
+        out.push({ type: 'reasoning', streamId: id, text: part.think });
+      }
+    }
+
+    for (const call of Array.isArray(e.tool_calls) ? e.tool_calls : []) {
+      const name = call?.function?.name;
+      if (!name) continue;
+      let input: unknown;
+      try {
+        input = call.function.arguments ? JSON.parse(call.function.arguments) : undefined;
+      } catch {
+        input = call.function.arguments;
+      }
+      out.push({ type: 'tool', streamId: id, ...describeKimiTool(String(name), input) });
+    }
+
+    return out;
+  }, streamId);
+}
+
+/** Kimi's tool names differ from Claude Code's, so the trail needs its own map. */
+function describeKimiTool(
+  name: string,
+  input: any,
+): { name: string; detail?: string; query?: string; url?: string } {
+  const asString = (value: unknown) => (typeof value === 'string' ? value : undefined);
+
+  switch (name) {
+    case 'SearchWeb': {
+      const query = asString(input?.query);
+      return { name: 'WebSearch', query, detail: query };
+    }
+    case 'FetchURL': {
+      const url = asString(input?.url);
+      return { name: 'WebFetch', url, detail: url };
+    }
+    case 'Shell':
+      return { name: 'shell', detail: asString(input?.command) ?? summarise(input) };
+    case 'ReadFile':
+    case 'WriteFile':
+    case 'StrReplaceFile':
+      return { name, detail: asString(input?.path) ?? summarise(input) };
+    default:
+      return { name, detail: summarise(input) };
+  }
+}
+
 /* ------------------------------------------------------------- helpers ---- */
 
 /**

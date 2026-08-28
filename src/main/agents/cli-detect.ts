@@ -200,6 +200,9 @@ export const CLI_LOGIN_ARGS: Record<ProviderId, string[]> = {
   glm: ['auth', 'login', '--claudeai'],
   anthropic: ['auth', 'login', '--claudeai'],
   openai: ['login'],
+  // `kimi-code login` runs a browser OAuth flow and stores the session itself,
+  // exactly like the other two.
+  kimi: ['login'],
 };
 
 /** Install hints shown when a CLI is missing. */
@@ -207,4 +210,7 @@ export const CLI_INSTALL_HINT: Record<ProviderId, string> = {
   glm: 'npm install -g @anthropic-ai/claude-code   (GLM Studio points it at Z.ai for you)',
   anthropic: 'npm install -g @anthropic-ai/claude-code',
   openai: 'npm install -g @openai/codex',
+  // Kimi Code is published on PyPI, not npm, and needs Python 3.12+ — which is
+  // why the hint uses uv rather than pip.
+  kimi: 'uv tool install kimi-code   (or: pipx install kimi-code)',
 };

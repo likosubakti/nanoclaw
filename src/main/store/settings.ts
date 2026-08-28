@@ -1,5 +1,5 @@
 import { readFileSync, writeFileSync } from 'node:fs';
-import { DEFAULT_MODELS, GLM_ENDPOINTS, DEFAULT_BASE_URLS } from '@shared/models';
+import { DEFAULT_MODELS, GLM_ENDPOINTS, KIMI_ENDPOINTS, DEFAULT_BASE_URLS } from '@shared/models';
 import type { AppSettings, ProviderId, ProviderSettings } from '@shared/types';
 import { SETTINGS_FILE, defaultWorkspace } from './paths';
 import { createLogger } from '../util/logger';
@@ -12,7 +12,8 @@ function defaultProvider(provider: ProviderId): ProviderSettings {
   return {
     enabled: true,
     baseUrl: '',
-    endpointPreset: provider === 'glm' ? 'zai-global' : undefined,
+    endpointPreset:
+      provider === 'glm' ? 'zai-global' : provider === 'kimi' ? 'moonshot-global' : undefined,
     defaultModel: DEFAULT_MODELS[provider],
     // API transport is the default everywhere: it streams token-by-token and
     // does not depend on a CLI being installed. Users on a subscription plan
@@ -39,6 +40,7 @@ export function defaultSettings(): AppSettings {
       glm: defaultProvider('glm'),
       anthropic: defaultProvider('anthropic'),
       openai: defaultProvider('openai'),
+      kimi: defaultProvider('kimi'),
     },
   };
 }
@@ -163,9 +165,19 @@ export function resolveBaseUrl(provider: ProviderId, settings = loadSettings()):
   const config = settings.providers[provider];
   let url = config.baseUrl?.trim();
 
+  // GLM and Kimi each run three surfaces whose keys are not interchangeable,
+  // so the preset — not the vendor default — is what a configured account means.
   if (!url && provider === 'glm') {
     const preset = config.endpointPreset ?? 'zai-global';
-    if (preset !== 'custom') url = GLM_ENDPOINTS[preset].baseUrl;
+    if (preset !== 'custom' && preset in GLM_ENDPOINTS) {
+      url = GLM_ENDPOINTS[preset as keyof typeof GLM_ENDPOINTS].baseUrl;
+    }
+  }
+  if (!url && provider === 'kimi') {
+    const preset = config.endpointPreset ?? 'moonshot-global';
+    if (preset !== 'custom' && preset in KIMI_ENDPOINTS) {
+      url = KIMI_ENDPOINTS[preset as keyof typeof KIMI_ENDPOINTS].baseUrl;
+    }
   }
 
   return (url || DEFAULT_BASE_URLS[provider]).replace(/\/+$/, '');
@@ -179,6 +191,8 @@ export function resolveAnthropicCompatUrl(
   provider: ProviderId,
   settings = loadSettings(),
 ): string {
+  // Only GLM borrows Claude Code. Kimi ships its own CLI with its own sign-in,
+  // so it never needs an Anthropic-compatible surface.
   if (provider !== 'glm') return resolveBaseUrl(provider, settings);
   const preset = settings.providers.glm.endpointPreset ?? 'zai-global';
   if (preset === 'custom') {
@@ -186,5 +200,6 @@ export function resolveAnthropicCompatUrl(
     // Strip an OpenAI-style suffix if the user pasted one.
     if (custom) return custom.replace(/\/(api\/)?(coding\/)?paas\/v4\/?$/, '/api/anthropic');
   }
-  return GLM_ENDPOINTS[preset === 'custom' ? 'zai-global' : preset].anthropicBaseUrl;
+  const glmPreset = preset in GLM_ENDPOINTS ? (preset as keyof typeof GLM_ENDPOINTS) : 'zai-global';
+  return GLM_ENDPOINTS[glmPreset].anthropicBaseUrl;
 }

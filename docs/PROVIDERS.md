@@ -114,6 +114,78 @@ support it ignore the field.
 
 ---
 
+## Kimi (Moonshot AI)
+
+### Endpoints
+
+| Preset | Chat base URL |
+|---|---|
+| Moonshot — International | `https://api.moonshot.ai/v1` |
+| Kimi Code — Subscription | `https://api.kimi.com/coding/v1` |
+| Moonshot — Mainland China | `https://api.moonshot.cn/v1` |
+
+The same three-surface split as GLM, for the same reason: `.ai` and `.cn` are separate platforms
+with separate accounts, and a key from one returns `401` on the other. These URLs are not guesses —
+they are the platform table inside Moonshot's own CLI (`kimi_cli/auth/platforms.py`), which is the
+authority on where its client points.
+
+### Authentication
+
+`Authorization: Bearer <key>`. Unlike Bigmodel's, Kimi keys are used as issued — no JWT signing.
+
+### Request shape
+
+OpenAI-compatible `POST /chat/completions`. Kimi's own client is a thin wrapper over the OpenAI SDK,
+so the adapter is GLM's minus the Zhipu JWT:
+
+- `thinking: { type: "enabled" }` switches on reasoning, sent only when asked for.
+- Reasoning arrives on `choices[0].delta.reasoning_content`, separate from `.content` — the same
+  field name GLM uses.
+
+### Models
+
+`kimi-k2.6` (flagship), `kimi-k2-thinking` (always reasons), `kimi-k2.5`, `kimi-k2-turbo-preview`.
+
+The catalog seeds **only ids confirmed from Moonshot's own client and changelog, and no context
+windows** — an invented number is worse than an absent one. `/models` returns `context_length` and
+`supports_reasoning` per model, so the refresh control beside the picker fills in the real values.
+
+### Kimi Code CLI
+
+Kimi is the one non-Anthropic provider that does **not** borrow Claude Code: it ships its own agent
+CLI with its own OAuth sign-in, so the CLI transport drives that instead.
+
+```
+kimi-code --print --output-format stream-json [--model M] [--thinking|--no-thinking]
+          [--work-dir DIR] [--agent-file FILE]
+```
+
+Two things differ from the other CLIs and both matter:
+
+**It streams whole messages, not token deltas.** The print-mode JSON writer buffers content parts
+and flushes a complete message at each step boundary. Every line is therefore new content, so the
+parser appends where the other two have to decide whether the finished message repeats deltas
+already sent.
+
+```json
+{"role":"assistant",
+ "content":[{"type":"text","text":"…"},{"type":"think","think":"…"}],
+ "tool_calls":[{"type":"function","id":"…","function":{"name":"…","arguments":"{…}"}}]}
+```
+
+**The toolset is cut by an agent specification, not a flag.** `--agent-file` replaces the whole
+spec, and a spec's `tools:` is an allowlist of fully-qualified classes — so an empty list really is
+no tools. A discussion turn writes a throwaway spec and system prompt to a temp directory, and
+removes them in a `finally` whether the turn succeeded, failed, or was stopped. `subagents: {}` is
+set explicitly: an inherited subagent would run with its own unrestricted toolset.
+
+Environment handed to the child: `KIMI_API_KEY` and `KIMI_BASE_URL` (the names Moonshot's client
+reads) when an API key is configured, and `ANTHROPIC_API_KEY` / `ANTHROPIC_AUTH_TOKEN` /
+`OPENAI_API_KEY` explicitly deleted — Kimi Code loads plugins and MCP servers of the user's
+choosing, and a stray key is exactly what one would reach for.
+
+---
+
 ## The CLI transport
 
 Both agent CLIs are driven headlessly, with the prompt on stdin so it never appears in the process

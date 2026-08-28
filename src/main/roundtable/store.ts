@@ -33,6 +33,7 @@ export function createRoom(input: { topic: string; seats?: Seat[] }): Room {
       glm: settings.providers.glm.defaultModel,
       anthropic: settings.providers.anthropic.defaultModel,
       openai: settings.providers.openai.defaultModel,
+      kimi: settings.providers.kimi.defaultModel,
     }).map((seat) => ({ ...seat, cwd: settings.workspaceDir }));
 
   const now = Date.now();

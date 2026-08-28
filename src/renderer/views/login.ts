@@ -1,13 +1,13 @@
 import type { ProviderId, ProviderStatus, Transport } from '@shared/types';
 import {
   API_KEY_PORTALS,
-  GLM_ENDPOINTS,
+  GLM_ENDPOINTS, KIMI_ENDPOINTS,
   PROVIDER_CLI,
   PROVIDER_LABELS,
   PROVIDER_ORDER,
   modelsByTier,
 } from '@shared/models';
-import type { GlmEndpointPreset } from '@shared/types';
+import type { EndpointPreset } from '@shared/types';
 import { clear, h, icon, modelSelect } from '../lib/dom';
 import {
   api,
@@ -79,7 +79,7 @@ function providerCard(provider: ProviderId): HTMLElement {
 
   body.appendChild(transportChooser(provider, config.transport));
 
-  if (provider === 'glm') body.appendChild(endpointChooser());
+  if (provider === 'glm' || provider === 'kimi') body.appendChild(endpointChooser(provider));
 
   body.appendChild(keyField(provider, status));
   body.appendChild(cliSection(provider, status));
@@ -89,7 +89,7 @@ function providerCard(provider: ProviderId): HTMLElement {
 }
 
 function badgeText(provider: ProviderId): string {
-  return { glm: 'GLM', anthropic: 'CL', openai: 'AI' }[provider];
+  return { glm: 'GLM', anthropic: 'CL', openai: 'AI', kimi: 'KM' }[provider];
 }
 
 function statusBadge(status?: ProviderStatus): HTMLElement {
@@ -162,18 +162,29 @@ function transportChooser(provider: ProviderId, current: Transport): HTMLElement
   return wrapper;
 }
 
-function endpointChooser(): HTMLElement {
-  const current = state.settings.providers.glm.endpointPreset ?? 'zai-global';
+/**
+ * The endpoint picker, for the two providers that run more than one platform.
+ *
+ * GLM and Kimi both split into an international platform, a mainland-China one,
+ * and a subscription surface — with accounts and keys that are not
+ * interchangeable. Picking the wrong one is the single most common setup
+ * mistake, which is why it is chosen here rather than buried in Advanced.
+ */
+function endpointChooser(provider: 'glm' | 'kimi'): HTMLElement {
+  const endpoints = provider === 'glm' ? GLM_ENDPOINTS : KIMI_ENDPOINTS;
+  const fallback = provider === 'glm' ? 'zai-global' : 'moonshot-global';
+  const current = state.settings.providers[provider].endpointPreset ?? fallback;
+
   const select = h(
     'select',
     {
       on: {
         change: async (event) => {
-          const preset = (event.target as HTMLSelectElement).value as GlmEndpointPreset;
+          const preset = (event.target as HTMLSelectElement).value as EndpointPreset;
           await api.settings.set({
             providers: {
               ...state.settings.providers,
-              glm: { ...state.settings.providers.glm, endpointPreset: preset },
+              [provider]: { ...state.settings.providers[provider], endpointPreset: preset },
             },
           });
           update({ settings: await api.settings.get() });
@@ -181,9 +192,8 @@ function endpointChooser(): HTMLElement {
         },
       },
     },
-    ...(Object.entries(GLM_ENDPOINTS) as Array<[GlmEndpointPreset, { label: string; note: string }]>).map(
-      ([value, meta]) =>
-        h('option', { value, text: meta.label, attrs: { selected: value === current } }),
+    ...Object.entries(endpoints).map(([value, meta]) =>
+      h('option', { value, text: meta.label, attrs: { selected: value === current } }),
     ),
     h('option', { value: 'custom', text: 'Custom base URL', attrs: { selected: current === 'custom' } }),
   );
@@ -191,17 +201,19 @@ function endpointChooser(): HTMLElement {
   const note =
     current === 'custom'
       ? 'Set the base URL under Settings → Advanced.'
-      : GLM_ENDPOINTS[current as Exclude<GlmEndpointPreset, 'custom'>].note;
+      : ((endpoints as Record<string, { note: string }>)[current]?.note ?? '');
+
+  const warning =
+    provider === 'glm'
+      ? 'Keys are not interchangeable between z.ai and open.bigmodel.cn.'
+      : 'Keys are not interchangeable between platform.moonshot.ai and platform.moonshot.cn.';
 
   return h(
     'label',
     { class: 'field' },
-    h('span', { class: 'label-text', text: 'Z.ai endpoint' }),
+    h('span', { class: 'label-text', text: provider === 'glm' ? 'Z.ai endpoint' : 'Moonshot endpoint' }),
     select,
-    h('span', {
-      class: 'hint',
-      text: `${note}  ·  Keys are not interchangeable between z.ai and open.bigmodel.cn.`,
-    }),
+    h('span', { class: 'hint', text: `${note}  ·  ${warning}` }),
   );
 }
 
@@ -348,7 +360,8 @@ function cliSection(provider: ProviderId, status?: ProviderStatus): HTMLElement 
   );
   section.appendChild(row);
 
-  // GLM authenticates with a key, so a subscription sign-in makes no sense there.
+  // GLM is the only provider whose CLI is borrowed rather than its own — it is
+  // Claude Code pointed at Z.ai, so there is no GLM account to sign in to.
   if (provider !== 'glm') {
     section.appendChild(
       h(
@@ -377,13 +390,16 @@ function cliSection(provider: ProviderId, status?: ProviderStatus): HTMLElement 
 }
 
 function subscriptionName(provider: ProviderId): string {
-  return provider === 'anthropic' ? 'Claude (Pro/Max)' : 'ChatGPT (Plus/Pro)';
+  if (provider === 'anthropic') return 'Claude (Pro/Max)';
+  if (provider === 'kimi') return 'Kimi';
+  return 'ChatGPT (Plus/Pro)';
 }
 
 function installCommand(provider: ProviderId): string {
-  return provider === 'openai'
-    ? 'npm install -g @openai/codex'
-    : 'npm install -g @anthropic-ai/claude-code';
+  if (provider === 'openai') return 'npm install -g @openai/codex';
+  // Kimi Code is a Python tool on PyPI needing 3.12+, so uv rather than npm.
+  if (provider === 'kimi') return 'uv tool install kimi-code';
+  return 'npm install -g @anthropic-ai/claude-code';
 }
 
 /* -------------------------------------------------------------- actions -- */

@@ -152,7 +152,7 @@ function emptyState(): HTMLElement {
 }
 
 function initials(provider: ProviderId): string {
-  return { glm: 'GLM', anthropic: 'CC', openai: 'CX' }[provider];
+  return { glm: 'GLM', anthropic: 'CC', openai: 'CX', kimi: 'KM' }[provider];
 }
 
 /* ---------------------------------------------------------------- tabs --- */

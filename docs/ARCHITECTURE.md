@@ -40,7 +40,7 @@ src/
     ipc-handlers.ts  every ipcMain.handle, with input validation
     store/           paths (XDG), settings, secrets, conversations
     net/             http (structured errors), sse (SSE + JSON-lines parsers)
-    providers/       glm, anthropic, openai, cli, registry
+    providers/       glm, anthropic, openai, kimi, cli, registry
     agents/          cli-detect, env, terminal
     auth/            zhipu-jwt, cli-credentials, login-flows
     roundtable/      engine (rounds, moderator), prompts, store
@@ -55,7 +55,7 @@ src/
 
 ## The provider abstraction
 
-Two orthogonal axes: **provider** (`glm` / `anthropic` / `openai`) and **transport**
+Two orthogonal axes: **provider** (`glm` / `anthropic` / `openai` / `kimi`) and **transport**
 (`api` / `cli`). Six combinations, one interface:
 
 ```ts
