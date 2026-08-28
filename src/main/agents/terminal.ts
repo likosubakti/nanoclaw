@@ -5,7 +5,8 @@ import os from 'node:os';
 import type { TerminalEvent, TerminalInfo, TerminalSpec } from '@shared/types';
 import { PROVIDER_CLI } from '@shared/models';
 import { CLI_INSTALL_HINT, detectCli, enrichedPath } from './cli-detect';
-import { readCliCredentials } from '../auth/cli-credentials';
+import { cliSessionState } from '../auth/cli-credentials';
+import { invalidateSession } from '../auth/cli-session';
 import { buildCliEnv } from './env';
 import { createLogger } from '../util/logger';
 
@@ -67,7 +68,7 @@ async function resolveCommand(
     return { file: shell, args: ['-l'], label: shell };
   }
 
-  const status = await detectCli(spec.provider, readCliCredentials(spec.provider));
+  const status = await detectCli(spec.provider, await cliSessionState(spec.provider));
   if (!status.installed || !status.path) {
     throw new Error(
       `${PROVIDER_CLI[spec.provider].label} is not installed.\n\nInstall it with:\n  ${CLI_INSTALL_HINT[spec.provider]}\n\nThen reopen this tab.`,
@@ -109,6 +110,9 @@ export async function startTerminal(spec: TerminalSpec): Promise<TerminalInfo> {
     proc.onData((data) => listener({ type: 'data', id, data }));
     proc.onExit(({ exitCode, signal }) => {
       sessions.delete(id);
+      // A finished sign-in — or an agent run that refreshed or expired the
+      // session — makes the cached "is there a session" answer stale.
+      invalidateSession(spec.provider);
       listener({ type: 'exit', id, code: exitCode, signal: signal ? String(signal) : undefined });
     });
 
@@ -140,6 +144,7 @@ export async function startTerminal(spec: TerminalSpec): Promise<TerminalInfo> {
     child.on('error', (err) => listener({ type: 'error', id, message: err.message }));
     child.on('close', (code, signal) => {
       sessions.delete(id);
+      invalidateSession(spec.provider);
       listener({ type: 'exit', id, code, signal: signal ?? undefined });
     });
 

@@ -135,8 +135,12 @@ Emitted JSON lines:
 | `{type:"assistant", message:{content:[…]}}` | Whole turn — the fallback when partial streaming is unavailable |
 | `{type:"result", usage, session_id}` | Token counts and the final session id |
 
-`--include-partial-messages` is only supported by newer releases; older ones ignore the flag, which
-is why whole `assistant` messages are handled too.
+`--include-partial-messages` is only supported by newer releases; older ones ignore the flag and
+send only whole `assistant` messages, so those carry the reply on those builds. The parser is
+created per stream and remembers whether deltas arrived: without that memory a stream either prints
+every reply twice or — on a build with no deltas — prints nothing at all while exiting zero. The
+`result` line's own text is held back as a last resort for the same reason. Codex is parsed the same
+way, because some of its releases emit both a delta stream and the finished message.
 
 ### Codex
 

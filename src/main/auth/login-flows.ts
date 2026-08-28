@@ -6,7 +6,8 @@ import { startTerminal } from '../agents/terminal';
 import { loadSettings } from '../store/settings';
 import { maskKey, resolveApiKey } from '../store/secrets';
 import { createLogger } from '../util/logger';
-import { readCliCredentials } from './cli-credentials';
+import { cliSessionState, readCliCredentials } from './cli-credentials';
+import { invalidateSession } from './cli-session';
 
 const log = createLogger('auth');
 
@@ -59,6 +60,9 @@ export function openKeyPortal(provider: ProviderId, parent?: BrowserWindow): voi
 export async function startCliLogin(provider: ProviderId): Promise<TerminalInfo> {
   const settings = loadSettings();
 
+  // The cached "is there a session" answer is about to be wrong either way.
+  invalidateSession(provider);
+
   const args = CLI_LOGIN_ARGS[provider];
 
   return startTerminal({
@@ -74,7 +78,7 @@ export async function startCliLogin(provider: ProviderId): Promise<TerminalInfo>
 /** Everything the Login screen needs to render one provider's row. */
 export async function providerStatus(provider: ProviderId): Promise<ProviderStatus> {
   const settings = loadSettings();
-  const credentials = readCliCredentials(provider);
+  const credentials = await cliSessionState(provider);
   const cli = await detectCli(provider, credentials);
   const apiKey = resolveApiKey(provider);
 
@@ -113,7 +117,15 @@ function describe(
     if (hasKey) return 'Using your API key through the CLI';
     return 'CLI installed but not signed in';
   }
-  return hasKey ? 'API key configured' : 'No API key yet';
+
+  if (hasKey) return 'API key configured';
+  // Signed in, but on a transport that cannot use it. Saying only "No API key
+  // yet" here is what makes a working subscription look broken: the sign-in
+  // succeeded and the card still reports nothing usable.
+  if (cliLoggedIn) {
+    return `Signed in to ${PROVIDER_CLI[provider].label} — switch “How requests are sent” to use that subscription`;
+  }
+  return 'No API key yet';
 }
 
 /** Offers a key the vendor CLI already stores, for one-click import. */

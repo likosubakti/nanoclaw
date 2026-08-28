@@ -3,6 +3,7 @@ import os from 'node:os';
 import path from 'node:path';
 import type { ProviderId } from '@shared/types';
 import { createLogger } from '../util/logger';
+import { cachedSession, probeSession } from './cli-session';
 
 const log = createLogger('cli-credentials');
 
@@ -14,6 +15,12 @@ const log = createLogger('cli-credentials');
  * CLI's store or sent anywhere — when a user picks a subscription login, the
  * CLI itself makes the request. API keys sitting in those files are offered as
  * an explicit, user-confirmed import, never silently adopted.
+ *
+ * The CLI's own answer (`cli-session.ts`) is preferred over anything found on
+ * disk, because it knows where it keeps its session and whether that session is
+ * a subscription or an API key. The file scan below is the fallback for builds
+ * that predate those subcommands — and the only source for an importable key,
+ * which no status command reports.
  */
 
 const home = os.homedir();
@@ -132,7 +139,7 @@ function glmState(): CliCredentialState {
   return { loggedIn: false };
 }
 
-export function readCliCredentials(provider: ProviderId): CliCredentialState {
+function fileState(provider: ProviderId): CliCredentialState {
   switch (provider) {
     case 'anthropic':
       return claudeState();
@@ -141,4 +148,31 @@ export function readCliCredentials(provider: ProviderId): CliCredentialState {
     case 'glm':
       return glmState();
   }
+}
+
+/** Folds the CLI's own verdict over the file scan, keeping the importable key. */
+function merge(base: CliCredentialState, probe: ReturnType<typeof cachedSession>): CliCredentialState {
+  if (!probe) return base;
+  return {
+    ...base,
+    loggedIn: probe.loggedIn,
+    // "session expired — run `claude` to refresh" is more useful than nothing
+    // when the CLI reports logged out and the file says why.
+    accountHint: probe.loggedIn ? (probe.accountHint ?? base.accountHint) : base.accountHint,
+  };
+}
+
+/**
+ * Synchronous read, for the paths that build a child environment and cannot
+ * await. It uses the last probe if one is fresh; the async callers below keep
+ * it warm, so in practice this sees the CLI's answer rather than the file's.
+ */
+export function readCliCredentials(provider: ProviderId): CliCredentialState {
+  return merge(fileState(provider), cachedSession(provider));
+}
+
+/** Asks the CLI first, then merges. Preferred wherever awaiting is possible. */
+export async function cliSessionState(provider: ProviderId): Promise<CliCredentialState> {
+  const probe = await probeSession(provider);
+  return merge(fileState(provider), probe);
 }

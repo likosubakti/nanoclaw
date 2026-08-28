@@ -80,6 +80,17 @@ async function versionOf(binary: string): Promise<string | undefined> {
 }
 
 /**
+ * The binary this provider's CLI actually resolves to, honouring a Settings
+ * override. Shared so that detection, capability probing, and the sign-in
+ * probe all agree on which binary they are talking about.
+ */
+export function resolveCliBinary(provider: ProviderId): string | null {
+  const override = loadSettings().providers[provider].cliPath?.trim();
+  if (override) return isExecutable(override) ? override : null;
+  return findExecutable(PROVIDER_CLI[provider].command);
+}
+
+/**
  * Locates the CLI for a provider and reports whether it is installed and
  * logged in. A configured override in Settings always wins over PATH lookup.
  */
@@ -88,8 +99,7 @@ export async function detectCli(
   loggedIn: { loggedIn: boolean; accountHint?: string },
 ): Promise<CliStatus> {
   const command = PROVIDER_CLI[provider].command;
-  const override = loadSettings().providers[provider].cliPath?.trim();
-  const resolved = override ? (isExecutable(override) ? override : null) : findExecutable(command);
+  const resolved = resolveCliBinary(provider);
 
   if (!resolved) {
     return { command, installed: false, loggedIn: false };
@@ -157,9 +167,12 @@ export async function probeCapabilities(binary: string): Promise<CliCapabilities
 /** The subcommand that starts each CLI's own sign-in flow. */
 export const CLI_LOGIN_ARGS: Record<ProviderId, string[]> = {
   // `claude auth login` is the documented entry point; bare `claude` only
-  // prompts for sign-in when it happens to have no session.
-  glm: ['auth', 'login'],
-  anthropic: ['auth', 'login'],
+  // prompts for sign-in when it happens to have no session. `--claudeai` is
+  // today's default, but the button says "Sign in with Claude (Pro/Max)" — so
+  // it is passed explicitly rather than left to a default that could change to
+  // Console billing under the user.
+  glm: ['auth', 'login', '--claudeai'],
+  anthropic: ['auth', 'login', '--claudeai'],
   openai: ['login'],
 };
 

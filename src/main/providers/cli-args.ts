@@ -10,9 +10,18 @@ import type { CliCapabilities } from '../agents/cli-detect';
  * exit non-zero and the turn is lost.
  */
 
-/** Tools that make Claude Code behave like a coding agent rather than a peer. */
+/**
+ * Tools that make Claude Code behave like a coding agent rather than a peer.
+ *
+ * `ToolSearch` and `Skill` are on the list because they are loaders: left
+ * enabled, they pull the others back in one at a time. A name the running
+ * build does not know is a warning on stderr, not an error, so listing a tool
+ * that a given release has renamed or dropped costs nothing.
+ */
 const CODING_TOOLS = [
   'Bash',
+  'BashOutput',
+  'KillShell',
   'Edit',
   'Write',
   'Read',
@@ -21,6 +30,8 @@ const CODING_TOOLS = [
   'NotebookEdit',
   'Task',
   'TodoWrite',
+  'ToolSearch',
+  'Skill',
 ];
 const RESEARCH_TOOLS = ['WebSearch', 'WebFetch'];
 

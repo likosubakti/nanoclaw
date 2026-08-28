@@ -5,7 +5,8 @@ import { readJsonLines } from '../net/sse';
 import { buildCliEnv } from '../agents/env';
 import { CLI_INSTALL_HINT, detectCli, probeCapabilities } from '../agents/cli-detect';
 import { claudeArgs, discussionSystemPrompt } from './cli-args';
-import { readCliCredentials } from '../auth/cli-credentials';
+import { createClaudeParser, createCodexParser } from './cli-stream';
+import { cliSessionState } from '../auth/cli-credentials';
 import { loadSettings } from '../store/settings';
 import { createLogger } from '../util/logger';
 import { MissingCredentialsError, type ProviderAdapter, type ProviderContext } from './types';
@@ -25,7 +26,7 @@ export class CliProvider implements ProviderAdapter {
   constructor(private readonly provider: ProviderId) {}
 
   async stream(req: ChatRequest, ctx: ProviderContext): Promise<void> {
-    const status = await detectCli(this.provider, readCliCredentials(this.provider));
+    const status = await detectCli(this.provider, await cliSessionState(this.provider));
     if (!status.installed) {
       throw new MissingCredentialsError(
         `${PROVIDER_CLI[this.provider].label} is not installed. Install it with:\n  ${CLI_INSTALL_HINT[this.provider]}`,
@@ -74,10 +75,13 @@ export class CliProvider implements ProviderAdapter {
     child.stdin.end();
 
     try {
-      const parse = isCodex ? parseCodexEvent : parseClaudeEvent;
+      const parse = isCodex ? createCodexParser(ctx.streamId) : createClaudeParser(ctx.streamId);
       for await (const event of readJsonLines(child.stdout)) {
-        for (const emitted of parse(event, ctx.streamId)) ctx.emit(emitted);
+        for (const emitted of parse(event)) ctx.emit(emitted);
       }
+      // A build without --include-partial-messages streams no deltas; this is
+      // where its reply finally gets emitted.
+      for (const emitted of parse.finish()) ctx.emit(emitted);
 
       const code = await exited;
       if (code !== 0 && code !== null) {
@@ -91,7 +95,7 @@ export class CliProvider implements ProviderAdapter {
 
   async test(): Promise<ConnectionTestResult> {
     const started = Date.now();
-    const credentials = readCliCredentials(this.provider);
+    const credentials = await cliSessionState(this.provider);
     const status = await detectCli(this.provider, credentials);
     const label = PROVIDER_CLI[this.provider].label;
 
@@ -144,133 +148,6 @@ function codexArgs(req: ChatRequest): string[] {
   return args;
 }
 
-/* ------------------------------------------------------------- parsers ---- */
-
-type Emit = Parameters<ProviderContext['emit']>[0];
-
-/**
- * Claude Code stream-json. Partial deltas arrive as `stream_event`; whole
- * assistant turns arrive as `assistant`. Both are handled because
- * --include-partial-messages is only supported on newer releases, and an older
- * CLI silently ignores the flag rather than failing.
- */
-function parseClaudeEvent(event: unknown, streamId: string): Emit[] {
-  const out: Emit[] = [];
-  if (!event || typeof event !== 'object') return out;
-  const e = event as any;
-
-  if (e.type === 'system' && e.subtype === 'init' && e.session_id) {
-    out.push({ type: 'session', streamId, sessionId: e.session_id });
-    return out;
-  }
-
-  if (e.type === 'stream_event' && e.event?.type === 'content_block_delta') {
-    const delta = e.event.delta;
-    if (delta?.type === 'text_delta' && delta.text) {
-      out.push({ type: 'text', streamId, text: delta.text });
-    } else if (delta?.type === 'thinking_delta' && delta.thinking) {
-      out.push({ type: 'reasoning', streamId, text: delta.thinking });
-    }
-    return out;
-  }
-
-  // Fall back to whole messages only when partial streaming is unavailable.
-  if (e.type === 'assistant' && Array.isArray(e.message?.content) && !e.__partialSeen) {
-    for (const block of e.message.content) {
-      if (block.type === 'tool_use') {
-        out.push({ type: 'tool', streamId, ...describeTool(block.name, block.input) });
-      }
-    }
-    return out;
-  }
-
-  if (e.type === 'result') {
-    if (e.session_id) out.push({ type: 'session', streamId, sessionId: e.session_id });
-    if (e.usage) {
-      out.push({
-        type: 'usage',
-        streamId,
-        inputTokens: e.usage.input_tokens,
-        outputTokens: e.usage.output_tokens,
-      });
-    }
-    if (e.is_error && e.result) {
-      out.push({ type: 'error', streamId, message: String(e.result) });
-    }
-  }
-
-  return out;
-}
-
-/**
- * Codex has changed its JSON envelope across releases. Rather than pin to one
- * version, look for every shape it has used: `msg.type` deltas (0.x), and
- * `item.completed` items (newer).
- */
-function parseCodexEvent(event: unknown, streamId: string): Emit[] {
-  const out: Emit[] = [];
-  if (!event || typeof event !== 'object') return out;
-  const e = event as any;
-
-  const msg = e.msg ?? e;
-  switch (msg.type) {
-    case 'agent_message_delta':
-      if (msg.delta) out.push({ type: 'text', streamId, text: msg.delta });
-      return out;
-    case 'agent_reasoning_delta':
-    case 'agent_reasoning_raw_content_delta':
-      if (msg.delta) out.push({ type: 'reasoning', streamId, text: msg.delta });
-      return out;
-    case 'exec_command_begin':
-      out.push({
-        type: 'tool',
-        streamId,
-        name: 'shell',
-        detail: Array.isArray(msg.command) ? msg.command.join(' ') : summarise(msg.command),
-      });
-      return out;
-    case 'web_search_begin':
-    case 'web_search_call':
-      out.push({
-        type: 'tool',
-        streamId,
-        name: 'WebSearch',
-        query: typeof msg.query === 'string' ? msg.query : undefined,
-        detail: typeof msg.query === 'string' ? msg.query : summarise(msg.query),
-      });
-      return out;
-    case 'token_count':
-      out.push({
-        type: 'usage',
-        streamId,
-        inputTokens: msg.info?.total_token_usage?.input_tokens,
-        outputTokens: msg.info?.total_token_usage?.output_tokens,
-      });
-      return out;
-    case 'error':
-      out.push({ type: 'error', streamId, message: msg.message ?? 'Codex reported an error.' });
-      return out;
-    default:
-      break;
-  }
-
-  if (e.type === 'item.completed' && e.item) {
-    if (e.item.type === 'agent_message' && e.item.text) {
-      out.push({ type: 'text', streamId, text: e.item.text });
-    } else if (e.item.type === 'command_execution') {
-      out.push({ type: 'tool', streamId, name: 'shell', detail: e.item.command });
-    } else if (e.item.type === 'web_search') {
-      out.push({ type: 'tool', streamId, name: 'WebSearch', query: e.item.query, detail: e.item.query });
-    }
-    return out;
-  }
-
-  if (e.type === 'thread.started' && e.thread_id) {
-    out.push({ type: 'session', streamId, sessionId: e.thread_id });
-  }
-  return out;
-}
-
 /* ------------------------------------------------------------- helpers ---- */
 
 function lastUserMessage(req: ChatRequest): string {
@@ -278,51 +155,6 @@ function lastUserMessage(req: ChatRequest): string {
     if (req.messages[i].role === 'user') return req.messages[i].content;
   }
   return '';
-}
-
-/**
- * Turns a Claude Code tool_use into a research-trail entry.
- *
- * The point is the structured fields: a WebSearch's terms and a WebFetch's URL
- * are what make the trail readable ("searched X", "read Y") instead of a wall
- * of JSON, and the URL becomes a link the user can follow.
- */
-function describeTool(
-  name: string,
-  input: any,
-): { name: string; detail?: string; query?: string; url?: string } {
-  const asString = (value: unknown) => (typeof value === 'string' ? value : undefined);
-
-  switch (name) {
-    case 'WebSearch': {
-      const query = asString(input?.query);
-      return { name, query, detail: query };
-    }
-    case 'WebFetch': {
-      const url = asString(input?.url);
-      const prompt = asString(input?.prompt);
-      return { name, url, detail: prompt ? `${url} — ${prompt}` : url };
-    }
-    case 'Read':
-    case 'Write':
-    case 'Edit':
-      return { name, detail: asString(input?.file_path) ?? summarise(input) };
-    case 'Bash':
-      return { name, detail: asString(input?.command) ?? summarise(input) };
-    case 'Grep':
-    case 'Glob':
-      return { name, detail: asString(input?.pattern) ?? summarise(input) };
-    case 'Task':
-      return { name, detail: asString(input?.description) ?? summarise(input) };
-    default:
-      return { name, detail: summarise(input) };
-  }
-}
-
-function summarise(value: unknown): string | undefined {
-  if (value === undefined || value === null) return undefined;
-  const text = typeof value === 'string' ? value : JSON.stringify(value);
-  return text.length > 160 ? `${text.slice(0, 159)}…` : text;
 }
 
 function cliFailureMessage(provider: ProviderId, code: number, stderr: string): string {

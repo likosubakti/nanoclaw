@@ -32,6 +32,8 @@ Always run `npm run typecheck && npm run check:wiring && npm test` before commit
 | `src/shared/ipc.ts` | IPC channel names |
 | `src/main/providers/registry.ts` | Adapter selection, abort handling, error mapping |
 | `src/main/providers/cli.ts` | CLI transport — how subscription logins work |
+| `src/main/providers/cli-stream.ts` | Parsers for both CLIs' JSON-lines output |
+| `src/main/auth/cli-session.ts` | Asks each CLI whether it is signed in |
 | `src/main/agents/env.ts` | Environment handed to spawned CLIs |
 | `src/main/agents/terminal.ts` | pty sessions, with pipe fallback |
 | `src/main/store/secrets.ts` | Keyring-backed credential storage |
@@ -57,8 +59,10 @@ Always run `npm run typecheck && npm run check:wiring && npm test` before commit
 ## Rules that must not be broken
 
 - **Never read, copy, or forward subscription tokens** from `~/.claude/.credentials.json` or
-  `~/.codex/auth.json`. Read only whether a session exists and whose it is. Subscription requests go
-  through the vendor CLI. This is the core design constraint — see `docs/LOGIN.md`.
+  `~/.codex/auth.json`. Ask the CLI instead — `claude auth status --json`, `codex login status` —
+  and read those files only as a fallback, only for whether a session exists and whose it is.
+  Subscription requests go through the vendor CLI. This is the core design constraint — see
+  `docs/LOGIN.md`.
 - **Never widen the preload surface** into a generic `invoke(channel, …)`. Add an explicit typed
   method instead.
 - **Never relax the renderer CSP**, especially `connect-src 'none'`. All network access belongs in
@@ -80,6 +84,9 @@ Always run `npm run typecheck && npm run check:wiring && npm test` before commit
   the CLI exit non-zero and loses the turn.
 - **Chat and roundtable turns must not run the CLIs as coding agents.** Replace the system prompt
   (`--system-prompt`, never append) and restrict the toolset — see `providers/cli-args.ts`.
+- **A CLI stream parser must handle both the deltas and the finished message**, and emit the reply
+  exactly once. Dropping the whole-message path makes older builds return nothing while exiting
+  zero; dropping the delta bookkeeping prints every reply twice — see `providers/cli-stream.ts`.
 - **Light and dark are both first-class.** Every colour is a token; check contrast before changing
   the palette — the light theme's text and semantic colours are chosen to pass WCAG AA.
 

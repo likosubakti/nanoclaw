@@ -77,8 +77,30 @@ wanted to use those plans directly would have to impersonate the vendor's own cl
 credentials it has no business holding.
 
 So GLM Studio doesn't. Sign-in runs the vendor's CLI, which performs the OAuth handshake and stores
-the session itself. GLM Studio reads exactly two things from that store: whether a session exists,
-and the account name to display. Tokens are never copied, forwarded, or transmitted anywhere.
+the session itself. Tokens are never copied, forwarded, or transmitted anywhere.
+
+### How "signed in" is determined
+
+By asking the CLI, not by reading its credential file:
+
+```
+claude auth status --json   →  {"loggedIn":true,"authMethod":"oauth_token",…}
+codex login status
+```
+
+Three things follow from asking rather than reading. The CLI is the only thing that knows where it
+keeps a session — a file today, a keyring tomorrow — so parsing one path would be guessing at an
+implementation detail that isn't ours. The answer says *how* it authenticated, which a file cannot:
+an `ANTHROPIC_API_KEY` the CLI happened to find is not a Pro/Max subscription, and calling it one
+would recommend the wrong transport and then fail the turn. And the question is answered without
+this process ever holding a token.
+
+Keys are stripped from the probe's own environment first, so a stray `ANTHROPIC_API_KEY` in your
+shell profile cannot mask a subscription that is genuinely there. The answer is cached for 20
+seconds and dropped the moment a CLI terminal exits, so signing in updates the card immediately.
+
+A build too old to have those subcommands answers nothing, and the credential file is read as a
+fallback — for whether a session exists and whose it is, never for the token.
 
 ### Subscription seats think like chat, not like coding agents
 
@@ -99,9 +121,13 @@ place) and restricts the toolset:
 | Roundtable seats | `WebSearch`, `WebFetch` only | A discussant should be able to check a claim, not edit your repository. |
 | Agent terminal | the CLI's own default | This is where you *want* the coding agent. |
 
+`ToolSearch` and `Skill` are disallowed too. They are loaders: left enabled, they pull the coding
+tools back in one at a time.
+
 Which flags a given CLI build accepts is probed from its `--help` once per binary, so a build that
 predates a flag degrades rather than failing — an unrecognised flag makes the CLI exit non-zero and
-loses the turn.
+loses the turn. (An unrecognised *tool name* is only a warning, so the disallow list can name tools
+a given release has renamed or dropped.)
 
 The result: your subscription reaches the model, and the model behaves like the chat model it is.
 
@@ -136,7 +162,12 @@ endpoint. Try the provider's default model.
 **"CLI installed but not signed in."**
 The session expired or was never created. Click **Sign in again**, or run `claude auth login` /
 `codex login` in your own terminal — the app picks up the result on its next check (every 30
-seconds, or click **Re-check**). `claude auth status` shows what the CLI currently thinks.
+seconds, or click **Re-check**). `claude auth status` shows what the CLI currently thinks, and is
+exactly what the app asks.
+
+**"Signed in to Claude Code — switch 'How requests are sent' to use that subscription."**
+Not an error. The sign-in worked, but this provider is set to the API-key transport, which cannot
+use a subscription. Change **How requests are sent** to the CLI option.
 
 **Sign-in terminal shows nothing.**
 The CLI could not start. Check **Settings → Advanced → CLI path**; a desktop-launched app inherits a
