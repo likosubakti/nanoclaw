@@ -1,5 +1,5 @@
 import { execFile } from 'node:child_process';
-import { accessSync, constants } from 'node:fs';
+import { accessSync, constants, readdirSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { promisify } from 'node:util';
@@ -34,9 +34,27 @@ function searchPath(): string[] {
     '/snap/bin',
   ];
 
-  // Every Node version managed by nvm/fnm/volta has its own bin directory.
-  for (const manager of ['.nvm/versions/node', '.local/share/fnm/node-versions']) {
-    extras.push(path.join(home, manager));
+  // Volta uses flat shims. nvm and fnm give every installed Node version its
+  // own bin directory, and the version root itself holds no executables — so
+  // pushing the root, as this did, searched a directory that can never contain
+  // `claude` and reported an installed CLI as missing.
+  extras.push(path.join(home, '.volta/bin'));
+  for (const [root, ...tail] of [
+    ['.nvm/versions/node', 'bin'],
+    ['.local/share/fnm/node-versions', 'installation', 'bin'],
+  ] as const) {
+    const base = path.join(home, root);
+    let versions: string[];
+    try {
+      versions = readdirSync(base);
+    } catch {
+      continue; // this manager is not installed
+    }
+    // Newest first, compared numerically: readdir order is arbitrary, and a
+    // stale v18 must not shadow the v22 the user actually installed into.
+    for (const version of versions.sort((a, b) => b.localeCompare(a, undefined, { numeric: true }))) {
+      extras.push(path.join(base, version, ...tail));
+    }
   }
 
   return [...new Set([...fromEnv, ...extras])];
@@ -128,6 +146,10 @@ export interface CliCapabilities {
   appendSystemPrompt: boolean;
   allowedTools: boolean;
   disallowedTools: boolean;
+  /** `--tools` — the only flag that actually removes tools from the set. */
+  tools: boolean;
+  /** `--restricted` — also ignores the user's own permissive settings files. */
+  restricted: boolean;
   partialMessages: boolean;
   excludeDynamicSections: boolean;
 }
@@ -156,6 +178,10 @@ export async function probeCapabilities(binary: string): Promise<CliCapabilities
     appendSystemPrompt: has('--append-system-prompt'),
     allowedTools: has('--allowedTools') || has('--allowed-tools'),
     disallowedTools: has('--disallowedTools') || has('--disallowed-tools'),
+    // `--tools <tools...>` is its own entry in --help; the substring does not
+    // occur inside --allowedTools / --disallowedTools.
+    tools: has('--tools '),
+    restricted: has('--restricted'),
     partialMessages: has('--include-partial-messages'),
     excludeDynamicSections: has('--exclude-dynamic-system-prompt-sections'),
   };

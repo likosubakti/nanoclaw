@@ -77,12 +77,21 @@ export interface RequestOptions {
 /**
  * fetch with a timeout, structured errors, and no retry. Retrying a streaming
  * completion silently would double-bill the user, so callers decide.
+ *
+ * The deadline covers reaching the server, not the exchange. `AbortSignal.timeout`
+ * keeps running once the headers arrive and tears the body stream mid-read, so
+ * a whole-exchange deadline killed any answer that took longer than it — and,
+ * because the abort came from the timer rather than the caller's signal, it
+ * surfaced as a bare DOMException and the partial answer, already paid for, was
+ * dropped from the transcript. A streaming body is governed by the caller's
+ * signal alone; that is what the Stop button is.
  */
 export async function request(url: string, options: RequestOptions = {}): Promise<Response> {
   const { method = 'GET', headers = {}, body, signal, timeoutMs = 120_000 } = options;
 
-  const timeout = AbortSignal.timeout(timeoutMs);
-  const combined = signal ? AbortSignal.any([signal, timeout]) : timeout;
+  const timeout = new AbortController();
+  const timer = setTimeout(() => timeout.abort(), timeoutMs);
+  const combined = signal ? AbortSignal.any([signal, timeout.signal]) : timeout.signal;
 
   const started = Date.now();
   let response: Response;
@@ -99,12 +108,16 @@ export async function request(url: string, options: RequestOptions = {}): Promis
     });
   } catch (err) {
     if (signal?.aborted) throw err;
-    if (timeout.aborted) {
+    if (timeout.signal.aborted) {
       throw new Error(
         `Request to ${hostOf(url)} timed out after ${Math.round(timeoutMs / 1000)}s.`,
       );
     }
     throw new Error(`Could not reach ${hostOf(url)}: ${(err as Error).message}`);
+  } finally {
+    // The headers are in. Anything still to come is the model thinking, and
+    // that is the caller's signal to govern, not a stopwatch's.
+    clearTimeout(timer);
   }
 
   log.debug(`${method} ${hostOf(url)} → ${response.status} in ${Date.now() - started}ms`);

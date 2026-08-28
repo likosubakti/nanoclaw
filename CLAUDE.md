@@ -74,6 +74,9 @@ Always run `npm run typecheck && npm run check:wiring && npm test` before commit
 - **Never log credentials.** Use `redactHeaders` before logging any header map.
 - **`ANTHROPIC_API_KEY` must stay deleted** from the GLM child environment in `agents/env.ts`, or a
   stray value in the user's shell profile silently bills their Anthropic account.
+- **A round must keep its lock until it returns, and must never save the room whole.** Releasing on
+  abort let a second round start on a stale copy and destroy a transcript; saving whole erased a
+  `closed` status and any seat edit made while the round ran — see `roundtable/round-plan.ts`.
 - **An unparseable moderator ruling must never mean "conclude".** `parseVerdict` defaults to
   continuing; reading noise as agreement ends a discussion nobody finished.
 - **The Telegram bridge answers only paired chats.** Never add a path that acts on a message from a
@@ -83,7 +86,9 @@ Always run `npm run typecheck && npm run check:wiring && npm test` before commit
 - **Never probe a CLI flag without checking `probeCapabilities` first.** An unrecognised flag makes
   the CLI exit non-zero and loses the turn.
 - **Chat and roundtable turns must not run the CLIs as coding agents.** Replace the system prompt
-  (`--system-prompt`, never append) and restrict the toolset — see `providers/cli-args.ts`.
+  (`--system-prompt`, never append) and restrict the toolset with `--restricted --tools` — see
+  `providers/cli-args.ts`. **`--allowedTools` is not a restriction**: it auto-approves what it names
+  and leaves all 42 built-in tools available, Bash and Write among them.
 - **A CLI stream parser must handle both the deltas and the finished message**, and emit the reply
   exactly once. Dropping the whole-message path makes older builds return nothing while exiting
   zero; dropping the delta bookkeeping prints every reply twice — see `providers/cli-stream.ts`.

@@ -33,6 +33,18 @@ export class CliProvider implements ProviderAdapter {
       );
     }
 
+    // Without a Z.ai key there is nothing pointing this child at GLM, so it
+    // would quietly answer as Claude — on the user's Anthropic subscription,
+    // under a seat labelled GLM. Better to refuse than to mislabel an answer.
+    if (this.provider === 'glm') {
+      const { resolveApiKey } = await import('../store/secrets');
+      if (!resolveApiKey('glm')) {
+        throw new MissingCredentialsError(
+          'Claude Code has no Z.ai key to use, so it would answer as Claude instead of GLM.\nAdd your GLM API key in Settings → Providers → GLM.',
+        );
+      }
+    }
+
     const prompt = lastUserMessage(req);
     if (!prompt) throw new Error('Nothing to send: the last message is empty.');
 
@@ -42,13 +54,29 @@ export class CliProvider implements ProviderAdapter {
 
     log.debug(`spawning ${status.path} ${args.join(' ')}`);
 
+    // detectCli, probeCapabilities and cliSessionState above all exec the
+    // binary, which takes about a second. A listener added to an already
+    // aborted signal never fires, so spawning now would leave a child nobody
+    // kills — running a full billed turn after the user pressed Stop.
+    if (ctx.signal.aborted) return;
+
     const child = spawn(status.path!, args, {
       cwd: req.cwd || loadSettings().workspaceDir,
       env: buildCliEnv(this.provider),
       stdio: ['pipe', 'pipe', 'pipe'],
     });
 
-    const onAbort = () => child.kill('SIGTERM');
+    // SIGTERM first, then SIGKILL if it is ignored. Until the child is gone
+    // the round holds its lock, so a CLI that declines to die would strand the
+    // room — and keep billing the user's subscription while it does.
+    let killTimer: NodeJS.Timeout | undefined;
+    const onAbort = () => {
+      child.kill('SIGTERM');
+      killTimer = setTimeout(() => {
+        if (!child.killed) child.kill('SIGKILL');
+      }, 5_000);
+      killTimer.unref?.();
+    };
     ctx.signal.addEventListener('abort', onAbort, { once: true });
 
     let stderr = '';
@@ -67,10 +95,17 @@ export class CliProvider implements ProviderAdapter {
     // Codex has no flag to replace its system prompt, so a discussion turn
     // carries its framing in the prompt itself.
     const policy = req.toolPolicy ?? 'full';
+    const system = req.systemPrompt?.trim();
+    // Codex has no flag to replace its system prompt, so a discussion turn
+    // carries its framing — and the caller's, which names the seat, its role,
+    // the topic and who else is in the room — in the prompt itself. Dropping
+    // the caller's half leaves a seat that does not know which speaker it is.
     const framed =
       isCodex && policy !== 'full'
-        ? `${discussionSystemPrompt(undefined, policy)}\n\n---\n\n${prompt}`
-        : prompt;
+        ? `${discussionSystemPrompt(system, policy)}\n\n---\n\n${prompt}`
+        : isCodex && system
+          ? `${system}\n\n---\n\n${prompt}`
+          : prompt;
     child.stdin.write(framed);
     child.stdin.end();
 
@@ -89,6 +124,7 @@ export class CliProvider implements ProviderAdapter {
       }
     } finally {
       ctx.signal.removeEventListener('abort', onAbort);
+      if (killTimer) clearTimeout(killTimer);
       if (!child.killed) child.kill();
     }
   }

@@ -121,8 +121,18 @@ place) and restricts the toolset:
 | Roundtable seats | `WebSearch`, `WebFetch` only | A discussant should be able to check a claim, not edit your repository. |
 | Agent terminal | the CLI's own default | This is where you *want* the coding agent. |
 
-`ToolSearch` and `Skill` are disallowed too. They are loaders: left enabled, they pull the coding
-tools back in one at a time.
+The restriction is `--restricted --tools`, and the distinction matters: `--allowedTools` reads like
+a restriction and is not one. It is a *permission* allowlist — it auto-approves what it names and
+leaves the rest of the toolset in place. Asked directly, a seat launched with
+`--allowedTools WebSearch WebFetch` reports **42** available tools, Bash, Edit, Write and Read among
+them, pointed at your workspace. With `--restricted --tools WebSearch WebFetch` it reports 2, and a
+chat turn (`--tools ""`) reports 0. `--restricted` also makes the CLI ignore your own settings
+files, so a permissive allowlist in `~/.claude` cannot put the coding tools back.
+
+Builds too old for `--tools` fall back to `--disallowedTools`, which is a real reduction — Bash,
+Edit, Write, Read, Glob, Grep and Task all go — but it is a denylist, so anything a future release
+adds arrives enabled. `ToolSearch` and `Skill` are on that list too: they are loaders, and left
+enabled they pull the coding tools back in one at a time.
 
 Which flags a given CLI build accepts is probed from its `--help` once per binary, so a build that
 predates a flag degrades rather than failing — an unrecognised flag makes the CLI exit non-zero and

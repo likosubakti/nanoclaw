@@ -31,6 +31,7 @@ import {
   votePrompt,
 } from './prompts';
 import { getRoom, saveRoom } from './store';
+import { foldRound, pickParticipants } from './round-plan';
 
 const log = createLogger('roundtable');
 
@@ -58,17 +59,24 @@ export function isRunning(roomId: string): boolean {
   return running.has(roomId);
 }
 
+/**
+ * Aborting does not release the lock. A round keeps writing until its seats
+ * settle — a CLI seat can take another minute — and dropping the lock here let
+ * a second round start on a copy of the room loaded before those writes. Both
+ * runs then saved the whole room and the last writer won, destroying a
+ * complete round. `runRound`'s `finally` releases the lock once the round has
+ * actually returned, which also keeps `isRunning` honest: the composer stays
+ * locked and Stop stays visible for the wind-down the toast already promises.
+ */
 export function abortRoom(roomId: string): boolean {
   const controller = running.get(roomId);
   if (!controller) return false;
   controller.abort();
-  running.delete(roomId);
   return true;
 }
 
 export function abortAllRooms(): void {
   for (const controller of running.values()) controller.abort();
-  running.clear();
 }
 
 export interface RunRoundInput {
@@ -115,22 +123,35 @@ export async function runRound(input: RunRoundInput, emit: Emit): Promise<Room |
   }
 }
 
+/**
+ * Persists what the round owns, folded onto the room as it is on disk now.
+ *
+ * `room` was read when the round started and goes stale the moment anything
+ * else writes: `room:close` and `room:update` both operate on their own fresh
+ * copy. Saving `room` whole erased them — most damagingly the `closed` status,
+ * which is the guard that stops a paired phone restarting a discussion the
+ * owner ended.
+ */
+function persistRound(room: Room): void {
+  const stored = getRoom(room.id);
+  if (!stored) {
+    saveRoom(room);
+    return;
+  }
+  const merged = foldRound(stored, room);
+  saveRoom(merged);
+  // Keep the in-memory copy honest so the room-status event does not announce
+  // 'idle' for a room the owner just closed.
+  room.status = merged.status;
+}
+
 async function executeRound(
   room: Room,
   input: RunRoundInput,
   signal: AbortSignal,
   emit: Emit,
 ): Promise<Room> {
-  const enabled = room.seats.filter((s) => s.enabled);
-  const requested = input.seatIds?.length
-    ? enabled.filter((s) => input.seatIds!.includes(s.id))
-    : enabled;
-
-  // A synthesis round is one seat's job, not the whole room's.
-  const participants =
-    input.mode === 'synthesis'
-      ? requested.filter((s) => s.id === (room.synthesisSeatId ?? requested[0]?.id)).slice(0, 1)
-      : requested;
+  const participants = pickParticipants(room, input.mode, input.seatIds);
 
   if (participants.length === 0) {
     emit({ type: 'room-error', roomId: room.id, message: 'No seats are enabled for this round.' });
@@ -149,7 +170,7 @@ async function executeRound(
   };
   room.rounds.push(round);
   room.status = 'running';
-  saveRoom(room);
+  persistRound(room);
 
   emit({
     type: 'round-start',
@@ -165,17 +186,23 @@ async function executeRound(
   // instruction, so it does not need one.
   if (room.moderator.enabled && input.mode !== 'synthesis' && !signal.aborted) {
     round.brief = await runModeratorBrief(room, round, input.message, signal, emit);
-    saveRoom(room);
+    persistRound(room);
   }
 
   // 'parallel' is the only mode where seats genuinely cannot see each other, so
   // it is the only one that runs concurrently. Everything else is a
   // conversation, and a conversation has to be ordered.
   if (input.mode === 'parallel') {
-    const turns = await Promise.all(
-      participants.map((seat) => runTurn(room, round, seat, signal, emit)),
-    );
-    round.turns.push(...turns);
+    // The brief runs first on every round and can take a minute, so Stop lands
+    // here often. Without this the whole roster was launched into an aborted
+    // round, and a CLI seat spawned after an abort is never killed — it runs a
+    // full billed turn nobody asked for.
+    if (!signal.aborted) {
+      const turns = await Promise.all(
+        participants.map((seat) => runTurn(room, round, seat, signal, emit)),
+      );
+      round.turns.push(...turns);
+    }
   } else {
     for (const seat of participants) {
       if (signal.aborted) break;
@@ -184,7 +211,7 @@ async function executeRound(
   }
 
   round.endedAt = Date.now();
-  saveRoom(room);
+  persistRound(room);
 
   // Who decides the discussion is over. A seated moderator is the judge — that
   // is what it is for. Seat voting is the fallback when there is no moderator,
@@ -207,7 +234,7 @@ async function executeRound(
   }
 
   room.status = 'idle';
-  saveRoom(room);
+  persistRound(room);
 
   emit({
     type: 'round-end',

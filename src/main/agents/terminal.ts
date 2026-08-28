@@ -6,6 +6,7 @@ import type { TerminalEvent, TerminalInfo, TerminalSpec } from '@shared/types';
 import { PROVIDER_CLI } from '@shared/models';
 import { CLI_INSTALL_HINT, detectCli, enrichedPath } from './cli-detect';
 import { cliSessionState } from '../auth/cli-credentials';
+import { resolveApiKey } from '../store/secrets';
 import { invalidateSession } from '../auth/cli-session';
 import { buildCliEnv } from './env';
 import { createLogger } from '../util/logger';
@@ -66,6 +67,12 @@ async function resolveCommand(
   if (spec.kind === 'shell') {
     const shell = process.env.SHELL || '/bin/bash';
     return { file: shell, args: ['-l'], label: shell };
+  }
+
+  if (spec.provider === 'glm' && !resolveApiKey('glm')) {
+    throw new Error(
+      'Claude Code has no Z.ai key to use.\n\nWithout one this session would answer as Claude, billed to your Anthropic account, under a tab labelled GLM.\n\nAdd your GLM API key in Settings → Providers → GLM.',
+    );
   }
 
   const status = await detectCli(spec.provider, await cliSessionState(spec.provider));

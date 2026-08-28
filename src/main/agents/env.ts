@@ -41,13 +41,17 @@ export function buildCliEnv(provider: ProviderId): NodeJS.ProcessEnv {
 
   switch (provider) {
     case 'glm': {
+      // Unconditionally, before anything else: a stale ANTHROPIC_API_KEY in the
+      // user's shell profile wins over AUTH_TOKEN when one is set, and without
+      // one it points a session labelled "GLM" straight at api.anthropic.com,
+      // billed to their Anthropic account. Neither is acceptable, so it goes
+      // whether or not a Z.ai key exists.
+      delete env.ANTHROPIC_API_KEY;
+
       const key = resolveApiKey('glm');
       if (key) {
         env.ANTHROPIC_BASE_URL = resolveAnthropicCompatUrl('glm', settings);
         env.ANTHROPIC_AUTH_TOKEN = key.key;
-        // A stale ANTHROPIC_API_KEY in the user's shell profile would win over
-        // AUTH_TOKEN and silently bill their Anthropic account instead.
-        delete env.ANTHROPIC_API_KEY;
         // Claude Code refuses unknown model ids unless told they are intended.
         env.ANTHROPIC_MODEL = settings.providers.glm.defaultModel;
         env.ANTHROPIC_SMALL_FAST_MODEL = 'glm-4.5-air';

@@ -25,9 +25,11 @@ five-seat room is mostly a function of that choice.
 
 **CLI seats discuss; they do not code.** `claude` and `codex` ship a coding system prompt and a
 full editing toolset, and asked an open question they reach for the filesystem instead of thinking.
-A roundtable turn replaces that system prompt and cuts the toolset down to web search and fetch —
-so a seat can check a claim but cannot edit your repository, and the model reasons the way it does
-in chat. See [LOGIN.md](LOGIN.md#subscription-seats-think-like-chat-not-like-coding-agents).
+A roundtable turn replaces that system prompt and cuts the toolset down to web search and fetch
+with `--restricted --tools` — so a seat can check a claim but cannot read or edit your repository,
+and the model reasons the way it does in chat. The flag matters: `--allowedTools` looks like the
+same thing and leaves all 42 tools in place. See
+[LOGIN.md](LOGIN.md#subscription-seats-think-like-chat-not-like-coding-agents).
 
 > A plain API seat has no tools, so it never visits a website. Its Thinking panel fills; its
 > Research trail stays empty. That is not a bug, and the seat chip says `no tools` so you can tell
