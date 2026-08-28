@@ -151,9 +151,12 @@ round rather than enforcing a budget.
 user to expose one would be absurd.
 
 The security model is the interesting part. A bot token is not a secret from anyone who can find the
-bot, so the bridge answers **nobody** by default: a chat must send a one-time pairing code, shown in
-the app and rotated on every start, before it can drive anything. Unpaired chats get a single
-refusal and are otherwise ignored.
+bot, so the bridge answers **nobody** by default: a chat must send a live pairing code, shown in the
+app, before it can drive anything. Six digits is only 900,000 possibilities and the bot answers
+every guess, so the code is its own oracle — which is safe only because it is consumed on first use,
+expires after ten minutes, and is burned after five wrong guesses. Unpaired chats get a single
+refusal and are otherwise ignored, which is both good manners and a rate limit: the poll loop
+handles updates serially, so a reply to a stranger delays the owner's own commands.
 
 Turn text is posted as each turn completes rather than streamed. Telegram throttles chatty bots, and
 a token-by-token mirror would be rate-limited into uselessness; short status lines carry progress
