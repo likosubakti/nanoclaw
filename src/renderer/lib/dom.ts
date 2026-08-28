@@ -124,3 +124,47 @@ const PATHS = {
     'M15.5 5.2a3.25 3.25 0 0 1 0 6.1',
   ],
 } as const;
+
+/**
+ * A model <select> grouped by tier.
+ *
+ * Roundtable seats each pick their own model, so the grouping is the point:
+ * it makes "flagship in the chair that decides, something cheap in the seats
+ * that only need an opinion" a one-glance decision rather than a lookup.
+ */
+export function modelSelect(
+  groups: Array<{ tier: string; models: Array<{ id: string; label: string; note?: string }> }>,
+  selected: string,
+  onChange: (id: string) => void,
+  props: Props = {},
+): HTMLSelectElement {
+  const select = h('select', { ...props, on: { ...props.on } });
+
+  // A model saved earlier, or typed by hand, must stay selectable even when it
+  // is not in any group.
+  const known = groups.some((g) => g.models.some((m) => m.id === selected));
+  if (selected && !known) {
+    const group = document.createElement('optgroup');
+    group.label = 'Current';
+    group.appendChild(h('option', { value: selected, text: selected, attrs: { selected: true } }));
+    select.appendChild(group);
+  }
+
+  for (const { tier, models } of groups) {
+    const group = document.createElement('optgroup');
+    group.label = tier;
+    for (const model of models) {
+      group.appendChild(
+        h('option', {
+          value: model.id,
+          text: model.label,
+          attrs: { selected: model.id === selected, title: model.note ?? '' },
+        }),
+      );
+    }
+    select.appendChild(group);
+  }
+
+  select.addEventListener('change', () => onChange(select.value));
+  return select;
+}

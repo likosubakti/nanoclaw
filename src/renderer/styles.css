@@ -1686,3 +1686,8 @@ label.field > .hint {
 :root[data-theme='light'] .reasoning {
   background: var(--bg-sunken);
 }
+
+/* Holds the model <select>, which is rebuilt whenever the provider changes. */
+.model-wrap {
+  display: inline-flex;
+}

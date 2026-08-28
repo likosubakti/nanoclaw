@@ -314,6 +314,9 @@ async function runTurn(
         maxTokens: settings.maxTokens,
         thinking: settings.thinking,
         cwd: seat.cwd ?? settings.workspaceDir,
+        // A discussion wants the model's judgement, not a coding agent. CLI
+        // seats keep web search so they can still check a claim.
+        toolPolicy: 'research',
       },
       { streamId: turn.id, signal, emit: onEvent },
     );
@@ -394,6 +397,8 @@ async function collectVotes(
             temperature: 0,
             thinking: false,
             cwd: seat.cwd ?? settings.workspaceDir,
+            // A one-line vote needs no tools at all.
+            toolPolicy: 'none',
           },
           {
             streamId: `${round.index}-${seat.id}-vote`,
@@ -548,6 +553,7 @@ async function runModeratorTurn(
         maxTokens: settings.maxTokens,
         thinking: settings.thinking,
         cwd: moderator.cwd ?? settings.workspaceDir,
+        toolPolicy: 'research',
       },
       {
         streamId: `${room.id}-mod-${roundIndex}-${phase}`,

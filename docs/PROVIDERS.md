@@ -63,11 +63,23 @@ instead — see [LOGIN.md](LOGIN.md).
 ### Request shape
 
 - The system prompt is a top-level `system` field, not a message.
-- Extended thinking sets `thinking: { type: "enabled", budget_tokens }`. The budget comes out of
-  `max_tokens`, so the app raises `max_tokens` to `budget + 1024` and drops `temperature` — the API
-  rejects a temperature override while thinking is on.
+- **The request shape changed with the 4.6 generation, and the old one is a hard error.** On Opus
+  4.6+, Sonnet 4.6+ and Fable, `thinking: { type: "enabled", budget_tokens }` and `temperature`
+  are both rejected with a `400`. Those models take `thinking: { type: "adaptive" }` and no
+  sampling parameters at all. Older models still require `budget_tokens` for thinking, and still
+  accept `temperature`.
+- `usesAdaptiveThinking()` in `providers/anthropic.ts` decides which shape to send. It defaults to
+  the modern shape for anything unrecognised: new releases follow the current shape, and sending
+  the legacy shape to a modern model is a hard failure while the reverse merely loses thinking.
 - Deltas arrive as named SSE events: `content_block_delta` carries `text_delta` or `thinking_delta`;
   usage arrives in `message_start` and `message_delta`.
+
+### Models
+
+Model ids are complete as written — never append a date suffix. The catalog is grouped by tier
+(flagship / balanced / fast), which is what makes per-seat model choice in the Roundtable a
+one-glance decision: `claude-opus-5` and `claude-fable-5` in the chair that decides,
+`claude-haiku-4-5` in a seat that only needs an opinion.
 
 ---
 

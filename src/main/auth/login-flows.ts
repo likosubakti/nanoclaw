@@ -1,7 +1,7 @@
 import { BrowserWindow, shell } from 'electron';
 import type { ProviderId, ProviderStatus, TerminalInfo } from '@shared/types';
 import { API_KEY_PORTALS, PROVIDER_CLI, PROVIDER_LABELS } from '@shared/models';
-import { detectCli } from '../agents/cli-detect';
+import { CLI_LOGIN_ARGS, detectCli } from '../agents/cli-detect';
 import { startTerminal } from '../agents/terminal';
 import { loadSettings } from '../store/settings';
 import { maskKey, resolveApiKey } from '../store/secrets';
@@ -59,9 +59,7 @@ export function openKeyPortal(provider: ProviderId, parent?: BrowserWindow): voi
 export async function startCliLogin(provider: ProviderId): Promise<TerminalInfo> {
   const settings = loadSettings();
 
-  // Codex has an explicit subcommand; Claude Code enters its login flow when
-  // started without a session.
-  const args = PROVIDER_CLI[provider].command === 'codex' ? ['login'] : [];
+  const args = CLI_LOGIN_ARGS[provider];
 
   return startTerminal({
     provider,

@@ -55,14 +55,25 @@ export class AnthropicProvider implements ProviderAdapter {
     };
     if (req.systemPrompt?.trim()) body.system = req.systemPrompt.trim();
 
-    if (req.thinking) {
-      // Extended thinking needs headroom inside max_tokens and forbids a
-      // temperature override, so both are set together or not at all.
-      const budget = Math.max(1024, Math.floor(maxTokens * 0.5));
-      body.thinking = { type: 'enabled', budget_tokens: budget };
-      body.max_tokens = Math.max(maxTokens, budget + 1024);
-    } else if (typeof req.temperature === 'number') {
-      body.temperature = req.temperature;
+    // The request shape changed with the 4.6 generation, and sending the old
+    // one is not a soft failure: `budget_tokens` and `temperature` are both
+    // rejected with a 400 on Opus 4.6 and newer, Sonnet 4.6 and newer, and
+    // Fable. Older models still require budget_tokens for thinking.
+    if (usesAdaptiveThinking(req.model)) {
+      if (req.thinking) {
+        body.thinking = { type: 'adaptive', display: 'summarized' };
+      }
+      // temperature/top_p/top_k are removed on these models entirely.
+    } else {
+      if (req.thinking) {
+        // Thinking must leave headroom inside max_tokens, and forbids a
+        // temperature override, so the two are set together or not at all.
+        const budget = Math.max(1024, Math.floor(maxTokens * 0.5));
+        body.thinking = { type: 'enabled', budget_tokens: budget };
+        body.max_tokens = Math.max(maxTokens, budget + 1024);
+      } else if (typeof req.temperature === 'number') {
+        body.temperature = req.temperature;
+      }
     }
 
     log.debug(`streaming ${req.model} from ${hostOf(baseUrl)}`);
@@ -161,6 +172,22 @@ export class AnthropicProvider implements ProviderAdapter {
       label: entry.display_name ?? entry.id,
     }));
   }
+}
+
+/**
+ * Whether a model takes the modern thinking surface.
+ *
+ * Defaults to true for anything unrecognised: the catalog only lists current
+ * models, new releases follow the current shape, and sending the legacy shape
+ * to a modern model is a hard 400 while the reverse merely loses thinking.
+ * Only the known older families are treated as legacy.
+ */
+export function usesAdaptiveThinking(model: string): boolean {
+  const id = model.toLowerCase();
+  // Claude 3.x and the *-4-5 generation predate adaptive thinking.
+  if (/^claude-[0-3][-.]/.test(id)) return false;
+  if (/-4[-.]5(\b|$)/.test(id)) return false;
+  return true;
 }
 
 interface AnthropicEvent {

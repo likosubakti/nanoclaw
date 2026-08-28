@@ -74,6 +74,12 @@ Always run `npm run typecheck && npm run check:wiring && npm test` before commit
   continuing; reading noise as agreement ends a discussion nobody finished.
 - **The Telegram bridge answers only paired chats.** Never add a path that acts on a message from a
   chat outside `telegram.allowedChatIds`.
+- **Never send `budget_tokens` or `temperature` to a modern Anthropic model** — both are rejected
+  with a 400 on Opus 4.6+, Sonnet 4.6+ and Fable. `usesAdaptiveThinking()` picks the shape.
+- **Never probe a CLI flag without checking `probeCapabilities` first.** An unrecognised flag makes
+  the CLI exit non-zero and loses the turn.
+- **Chat and roundtable turns must not run the CLIs as coding agents.** Replace the system prompt
+  (`--system-prompt`, never append) and restrict the toolset — see `providers/cli-args.ts`.
 - **Light and dark are both first-class.** Every colour is a token; check contrast before changing
   the palette — the light theme's text and semantic colours are chosen to pass WCAG AA.
 

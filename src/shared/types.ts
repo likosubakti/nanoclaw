@@ -86,6 +86,20 @@ export interface ChatRequest {
   /** CLI transports only. */
   cwd?: string;
   cliSessionId?: string;
+  /**
+   * What a CLI-transport turn is allowed to do.
+   *
+   * The coding CLIs ship a coding system prompt and a full editing toolset,
+   * which makes them noticeably worse at open discussion than the same model
+   * reached as chat — they reach for the filesystem instead of thinking. This
+   * lets a turn ask for chat behaviour without giving up the subscription that
+   * only the CLI can use.
+   *
+   *  - `none`     — no tools at all. Pure reasoning; closest to chat.
+   *  - `research` — web search and fetch only. Can look things up, cannot code.
+   *  - `full`     — the CLI's own default. What an agent terminal wants.
+   */
+  toolPolicy?: 'none' | 'research' | 'full';
 }
 
 export type StreamEvent =
@@ -194,10 +208,18 @@ export interface ConnectionTestResult {
 
 /* ------------------------------------------------------------- models ----- */
 
+/**
+ * Where a model sits in its family. Roundtable seats are assigned per-seat, so
+ * the picker groups by tier: you generally want the flagship in the chair that
+ * decides and something cheaper in the seats that only need to have an opinion.
+ */
+export type ModelTier = 'flagship' | 'balanced' | 'fast' | 'reasoning';
+
 export interface ModelInfo {
   id: string;
   provider: ProviderId;
   label: string;
+  tier?: ModelTier;
   /** Short description shown under the name in the picker. */
   note?: string;
   contextWindow?: number;

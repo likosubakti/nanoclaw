@@ -5,9 +5,10 @@ import {
   PROVIDER_CLI,
   PROVIDER_LABELS,
   PROVIDER_ORDER,
+  modelsByTier,
 } from '@shared/models';
 import type { GlmEndpointPreset } from '@shared/types';
-import { clear, h, icon } from '../lib/dom';
+import { clear, h, icon, modelSelect } from '../lib/dom';
 import {
   api,
   modelsForProvider,
@@ -421,32 +422,19 @@ function actionRow(provider: ProviderId, transport: Transport): HTMLElement {
     'Test connection',
   );
 
-  const models = modelsForProvider(provider);
-  const modelSelect = h(
-    'select',
-    {
-      class: 'inline',
-      title: 'Default model',
-      on: {
-        change: async (event) => {
-          const model = (event.target as HTMLSelectElement).value;
-          await api.settings.set({
-            providers: {
-              ...state.settings.providers,
-              [provider]: { ...state.settings.providers[provider], defaultModel: model },
-            },
-          });
-          update({ settings: await api.settings.get() });
+  const modelPicker = modelSelect(
+    modelsByTier(modelsForProvider(provider)),
+    state.settings.providers[provider].defaultModel,
+    async (model) => {
+      await api.settings.set({
+        providers: {
+          ...state.settings.providers,
+          [provider]: { ...state.settings.providers[provider], defaultModel: model },
         },
-      },
+      });
+      update({ settings: await api.settings.get() });
     },
-    ...models.map((m) =>
-      h('option', {
-        value: m.id,
-        text: m.label,
-        attrs: { selected: m.id === state.settings.providers[provider].defaultModel },
-      }),
-    ),
+    { class: 'inline', title: 'Default model' },
   );
 
   const refreshButton = h(
@@ -489,7 +477,7 @@ function actionRow(provider: ProviderId, transport: Transport): HTMLElement {
       'div',
       { class: 'row wrap' },
       h('span', { class: 'label-text', style: { margin: '0' }, text: 'Default model' }),
-      modelSelect,
+      modelPicker,
       refreshButton,
       h('span', { class: 'spacer' }),
       testButton,

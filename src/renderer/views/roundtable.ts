@@ -12,8 +12,8 @@ import type {
 } from '@shared/roundtable';
 import { ROLE_PRESETS, ROUND_MODES, moderatorCanResearch, seatCanResearch } from '@shared/roundtable';
 import type { ProviderId, Transport } from '@shared/types';
-import { PROVIDER_LABELS, PROVIDER_ORDER } from '@shared/models';
-import { clear, h, icon } from '../lib/dom';
+import { PROVIDER_LABELS, PROVIDER_ORDER, modelsByTier } from '@shared/models';
+import { clear, h, icon, modelSelect } from '../lib/dom';
 import { renderMarkdown } from '../lib/markdown';
 import { api, modelsForProvider, toast, update } from '../state';
 
@@ -112,10 +112,49 @@ export function renderRoundtable(container: HTMLElement): void {
   container.appendChild(transcriptEl);
   container.appendChild(buildComposer());
 
+  // Seat status is per-mount. Carrying it across a remount leaves seats
+  // spinning forever on turns that finished while the view was unmounted.
+  seatStatus.clear();
+
   paintSeatStrip();
   paintRolesPanel();
   paintTranscript();
   subscribe();
+  void resyncFromDisk();
+}
+
+/**
+ * Re-reads the room after mounting.
+ *
+ * Rounds keep running while this view is unmounted — the engine lives in the
+ * main process — so the in-memory copy is stale the moment the user switches
+ * away mid-round. Without this, coming back showed an empty discussion with
+ * the seats still spinning, while the completed turns sat on disk.
+ */
+async function resyncFromDisk(): Promise<void> {
+  if (!room) return;
+  const id = room.id;
+
+  const [fresh, snapshot] = await Promise.all([api.rooms.get(id), api.rooms.totals(id)]);
+  // The user may have navigated again while this was in flight.
+  if (!fresh || !room || room.id !== id) return;
+
+  room = fresh;
+  if (snapshot) {
+    totals = snapshot.totals;
+    roundRunning = snapshot.running;
+  }
+
+  // A live round re-attaches through the event stream; a finished one is
+  // simply repainted from what was persisted.
+  if (!roundRunning) {
+    live.clear();
+    liveModerator = null;
+    seatStatus.clear();
+  }
+  paintSeatStrip();
+  paintTranscript();
+  update({});
 }
 
 export function buildRoundtableToolbar(): HTMLElement[] {
@@ -462,25 +501,17 @@ function backendPickers(
   current: { provider: ProviderId; transport: Transport; model: string },
   onChange: (next: { provider: ProviderId; transport: Transport; model: string }) => void,
 ): HTMLElement {
-  const modelSelect = h('select', { class: 'inline' });
-
-  const fillModels = (provider: ProviderId, selected: string) => {
-    clear(modelSelect);
-    const models = modelsForProvider(provider);
-    const options = models.some((m) => m.id === selected)
-      ? models
-      : [{ id: selected, provider, label: selected }, ...models];
-    for (const m of options) {
-      modelSelect.appendChild(
-        h('option', { value: m.id, text: m.label, attrs: { selected: m.id === selected } }),
-      );
-    }
+  // Rebuilt on provider change, so it is held in a wrapper the handler can swap.
+  const modelWrap = h('span', { class: 'model-wrap' });
+  const fillModels = (p: ProviderId, selected: string) => {
+    clear(modelWrap);
+    modelWrap.appendChild(
+      modelSelect(modelsByTier(modelsForProvider(p)), selected, (id) =>
+        onChange({ ...current, model: id }),
+      { class: 'inline', title: 'Model for this seat' }),
+    );
   };
   fillModels(current.provider, current.model);
-
-  modelSelect.addEventListener('change', () =>
-    onChange({ ...current, model: modelSelect.value }),
-  );
 
   const providerSelect = h(
     'select',
@@ -516,7 +547,7 @@ function backendPickers(
     h('option', { value: 'cli', text: 'CLI', attrs: { selected: current.transport === 'cli' } }),
   );
 
-  return h('div', { class: 'row wrap' }, providerSelect, transportSelect, modelSelect);
+  return h('div', { class: 'row wrap' }, providerSelect, transportSelect, modelWrap);
 }
 
 function rolePicker(onPick: (prompt: string) => void): HTMLElement {

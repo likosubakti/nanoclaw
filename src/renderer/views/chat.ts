@@ -1,6 +1,6 @@
 import type { ChatMessage, Conversation, ProviderId, StreamEvent } from '@shared/types';
-import { PROVIDER_LABELS, PROVIDER_ORDER } from '@shared/models';
-import { clear, h, icon } from '../lib/dom';
+import { PROVIDER_LABELS, PROVIDER_ORDER, modelsByTier } from '@shared/models';
+import { clear, h, icon, modelSelect } from '../lib/dom';
 import { renderMarkdown } from '../lib/markdown';
 import {
   api,
@@ -102,39 +102,23 @@ export function buildChatToolbar(): HTMLElement[] {
 
   const models = modelsForProvider(provider);
   const currentModel = conversation?.model ?? state.settings.providers[provider].defaultModel;
-  // A model saved earlier may not be in the catalog; keep it selectable.
-  const options = models.some((m) => m.id === currentModel)
-    ? models
-    : [{ id: currentModel, provider, label: currentModel }, ...models];
 
-  const modelSelect = h(
-    'select',
-    {
-      class: 'inline',
-      title: 'Model',
-      on: {
-        change: (event) => {
-          const model = (event.target as HTMLSelectElement).value;
-          if (state.current) {
-            state.current.model = model;
-            void api.conversations.update(state.current);
-          }
-          void api.settings.set({
-            providers: {
-              ...state.settings.providers,
-              [provider]: { ...state.settings.providers[provider], defaultModel: model },
-            },
-          });
+  const modelPicker = modelSelect(
+    modelsByTier(models),
+    currentModel,
+    (model) => {
+      if (state.current) {
+        state.current.model = model;
+        void api.conversations.update(state.current);
+      }
+      void api.settings.set({
+        providers: {
+          ...state.settings.providers,
+          [provider]: { ...state.settings.providers[provider], defaultModel: model },
         },
-      },
+      });
     },
-    ...options.map((m) =>
-      h('option', {
-        value: m.id,
-        text: m.label,
-        attrs: { selected: m.id === currentModel, title: m.note ?? '' },
-      }),
-    ),
+    { class: 'inline', title: 'Model' },
   );
 
   const transportBadge = h('span', {
@@ -146,7 +130,7 @@ export function buildChatToolbar(): HTMLElement[] {
         : 'Requests go straight to the provider HTTP API with your key.',
   });
 
-  return [providerSelect, modelSelect, transportBadge];
+  return [providerSelect, modelPicker, transportBadge];
 }
 
 async function switchProvider(provider: ProviderId): Promise<void> {
@@ -470,6 +454,9 @@ async function send(): Promise<void> {
     thinking: state.settings.thinking,
     cwd: conversation.cwd ?? state.settings.workspaceDir,
     cliSessionId: conversation.cliSessionId,
+    // Chat means chat, even when the subscription is reached through a coding
+    // CLI: no tools, and the coding system prompt replaced.
+    toolPolicy: 'none',
   });
 }
 

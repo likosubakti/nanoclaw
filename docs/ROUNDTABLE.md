@@ -19,6 +19,16 @@ tools and can search the web, the API seats reason from what they know.
 technical director. They are three different voices because their roles differ, not their billing.
 Add, duplicate and remove seats in the **Roles** panel.
 
+**Every seat picks its own model.** The picker is grouped by tier, so you can seat a flagship in
+the chair that decides and something cheap in the seats that only need an opinion — the bill for a
+five-seat room is mostly a function of that choice.
+
+**CLI seats discuss; they do not code.** `claude` and `codex` ship a coding system prompt and a
+full editing toolset, and asked an open question they reach for the filesystem instead of thinking.
+A roundtable turn replaces that system prompt and cuts the toolset down to web search and fetch —
+so a seat can check a claim but cannot edit your repository, and the model reasons the way it does
+in chat. See [LOGIN.md](LOGIN.md#subscription-seats-think-like-chat-not-like-coding-agents).
+
 > A plain API seat has no tools, so it never visits a website. Its Thinking panel fills; its
 > Research trail stays empty. That is not a bug, and the seat chip says `no tools` so you can tell
 > at a glance.

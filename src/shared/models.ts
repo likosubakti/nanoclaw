@@ -63,6 +63,7 @@ export const MODEL_CATALOG: ModelInfo[] = [
     id: 'glm-4.6',
     provider: 'glm',
     label: 'GLM-4.6',
+    tier: 'flagship',
     note: 'Flagship — strongest coding and agent performance',
     contextWindow: 200_000,
     supportsThinking: true,
@@ -72,6 +73,7 @@ export const MODEL_CATALOG: ModelInfo[] = [
     id: 'glm-4.5',
     provider: 'glm',
     label: 'GLM-4.5',
+    tier: 'flagship',
     note: 'Previous flagship, hybrid reasoning',
     contextWindow: 128_000,
     supportsThinking: true,
@@ -80,6 +82,7 @@ export const MODEL_CATALOG: ModelInfo[] = [
     id: 'glm-4.5-air',
     provider: 'glm',
     label: 'GLM-4.5-Air',
+    tier: 'balanced',
     note: 'Lighter and cheaper, same reasoning modes',
     contextWindow: 128_000,
     supportsThinking: true,
@@ -88,6 +91,7 @@ export const MODEL_CATALOG: ModelInfo[] = [
     id: 'glm-4.5-flash',
     provider: 'glm',
     label: 'GLM-4.5-Flash',
+    tier: 'fast',
     note: 'Free tier — good for drafts and summaries',
     contextWindow: 128_000,
     supportsThinking: true,
@@ -96,28 +100,79 @@ export const MODEL_CATALOG: ModelInfo[] = [
     id: 'glm-4v',
     provider: 'glm',
     label: 'GLM-4V',
+    tier: 'balanced',
     note: 'Vision',
     contextWindow: 8_000,
     supportsVision: true,
   },
 
   // ---- Anthropic ---------------------------------------------------------
+  // Verified against the current Anthropic model list. Model ids are complete
+  // as written — never append a date suffix.
   {
-    id: 'claude-sonnet-4-5',
+    id: 'claude-opus-5',
     provider: 'anthropic',
-    label: 'Claude Sonnet 4.5',
-    note: 'Balanced default for chat and code',
-    contextWindow: 200_000,
+    label: 'Claude Opus 5',
+    tier: 'flagship',
+    note: 'Flagship. Thinking on by default',
+    contextWindow: 1_000_000,
     supportsThinking: true,
     supportsVision: true,
     recommended: true,
   },
   {
-    id: 'claude-opus-4-5',
+    id: 'claude-fable-5',
     provider: 'anthropic',
-    label: 'Claude Opus 4.5',
-    note: 'Highest capability',
-    contextWindow: 200_000,
+    label: 'Claude Fable 5',
+    tier: 'flagship',
+    note: 'Most capable. Thinking always on, priced above Opus',
+    contextWindow: 1_000_000,
+    supportsThinking: true,
+    supportsVision: true,
+  },
+  {
+    id: 'claude-opus-4-8',
+    provider: 'anthropic',
+    label: 'Claude Opus 4.8',
+    tier: 'flagship',
+    contextWindow: 1_000_000,
+    supportsThinking: true,
+    supportsVision: true,
+  },
+  {
+    id: 'claude-opus-4-7',
+    provider: 'anthropic',
+    label: 'Claude Opus 4.7',
+    tier: 'flagship',
+    contextWindow: 1_000_000,
+    supportsThinking: true,
+    supportsVision: true,
+  },
+  {
+    id: 'claude-opus-4-6',
+    provider: 'anthropic',
+    label: 'Claude Opus 4.6',
+    tier: 'flagship',
+    contextWindow: 1_000_000,
+    supportsThinking: true,
+    supportsVision: true,
+  },
+  {
+    id: 'claude-sonnet-5',
+    provider: 'anthropic',
+    label: 'Claude Sonnet 5',
+    tier: 'balanced',
+    note: 'Strong and much cheaper than Opus',
+    contextWindow: 1_000_000,
+    supportsThinking: true,
+    supportsVision: true,
+  },
+  {
+    id: 'claude-sonnet-4-6',
+    provider: 'anthropic',
+    label: 'Claude Sonnet 4.6',
+    tier: 'balanced',
+    contextWindow: 1_000_000,
     supportsThinking: true,
     supportsVision: true,
   },
@@ -125,7 +180,8 @@ export const MODEL_CATALOG: ModelInfo[] = [
     id: 'claude-haiku-4-5',
     provider: 'anthropic',
     label: 'Claude Haiku 4.5',
-    note: 'Fast and inexpensive',
+    tier: 'fast',
+    note: 'Cheapest. Good for seats that only need an opinion',
     contextWindow: 200_000,
     supportsVision: true,
   },
@@ -135,6 +191,7 @@ export const MODEL_CATALOG: ModelInfo[] = [
     id: 'gpt-5.1',
     provider: 'openai',
     label: 'GPT-5.1',
+    tier: 'flagship',
     note: 'General purpose flagship',
     contextWindow: 400_000,
     supportsThinking: true,
@@ -145,6 +202,7 @@ export const MODEL_CATALOG: ModelInfo[] = [
     id: 'gpt-5.1-codex',
     provider: 'openai',
     label: 'GPT-5.1-Codex',
+    tier: 'flagship',
     note: 'Tuned for agentic coding — what Codex CLI uses',
     contextWindow: 400_000,
     supportsThinking: true,
@@ -153,6 +211,7 @@ export const MODEL_CATALOG: ModelInfo[] = [
     id: 'gpt-5-mini',
     provider: 'openai',
     label: 'GPT-5 mini',
+    tier: 'balanced',
     note: 'Cheaper, still reasoning-capable',
     contextWindow: 400_000,
     supportsThinking: true,
@@ -161,6 +220,7 @@ export const MODEL_CATALOG: ModelInfo[] = [
     id: 'o4-mini',
     provider: 'openai',
     label: 'o4-mini',
+    tier: 'reasoning',
     note: 'Reasoning-first, low cost',
     contextWindow: 200_000,
     supportsThinking: true,
@@ -169,12 +229,33 @@ export const MODEL_CATALOG: ModelInfo[] = [
 
 export const DEFAULT_MODELS: Record<ProviderId, string> = {
   glm: 'glm-4.6',
-  anthropic: 'claude-sonnet-4-5',
+  anthropic: 'claude-opus-5',
   openai: 'gpt-5.1',
 };
 
 export function modelsFor(provider: ProviderId): ModelInfo[] {
   return MODEL_CATALOG.filter((m) => m.provider === provider);
+}
+
+export const TIER_LABELS: Record<NonNullable<ModelInfo['tier']>, string> = {
+  flagship: 'Flagship',
+  balanced: 'Balanced',
+  reasoning: 'Reasoning',
+  fast: 'Fast & cheap',
+};
+
+/** Groups models by tier, in the order the picker should show them. */
+export function modelsByTier(models: ModelInfo[]): Array<{ tier: string; models: ModelInfo[] }> {
+  const order: Array<NonNullable<ModelInfo['tier']>> = ['flagship', 'balanced', 'reasoning', 'fast'];
+  const groups = order
+    .map((tier) => ({ tier: TIER_LABELS[tier], models: models.filter((m) => m.tier === tier) }))
+    .filter((g) => g.models.length > 0);
+
+  // Anything the catalog does not tier — a model fetched from the provider, or
+  // one the user typed — still has to appear.
+  const untiered = models.filter((m) => !m.tier);
+  if (untiered.length) groups.push({ tier: 'Other', models: untiered });
+  return groups;
 }
 
 export function findModel(provider: ProviderId, id: string): ModelInfo | undefined {

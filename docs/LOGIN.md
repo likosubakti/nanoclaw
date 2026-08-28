@@ -64,6 +64,7 @@ For Claude Pro/Max or ChatGPT Plus/Pro:
    npm install -g @anthropic-ai/claude-code    # Claude
    npm install -g @openai/codex                # OpenAI
    ```
+   The sign-in button runs `claude auth login` or `codex login` for you in a terminal tab.
 2. Set **How requests are sent** to the CLI option.
 3. Click **Sign in with Claude** / **Sign in with ChatGPT**. A terminal tab opens running the CLI's
    own login flow, which opens your browser.
@@ -79,8 +80,30 @@ So GLM Studio doesn't. Sign-in runs the vendor's CLI, which performs the OAuth h
 the session itself. GLM Studio reads exactly two things from that store: whether a session exists,
 and the account name to display. Tokens are never copied, forwarded, or transmitted anywhere.
 
-The side benefit is that CLI-transport chats can use the agent's tools — reading files, running
-commands — which an API-only client cannot do.
+### Subscription seats think like chat, not like coding agents
+
+There is a catch worth knowing about, because it is the difference between a useful discussion and
+a useless one.
+
+`claude` and `codex` are coding agents. They ship a coding system prompt and a full editing
+toolset, and it shows: asked an open question, they reach for the filesystem instead of thinking.
+The same model reached as chat reasons noticeably better.
+
+So a chat or roundtable turn does not run them as coding agents. It **replaces** the coding system
+prompt (`--system-prompt`, not `--append-system-prompt` — appending leaves the coding framing in
+place) and restricts the toolset:
+
+| Where | Tools | Why |
+|---|---|---|
+| Chat view | none | Pure reasoning. Closest to talking to the model directly. |
+| Roundtable seats | `WebSearch`, `WebFetch` only | A discussant should be able to check a claim, not edit your repository. |
+| Agent terminal | the CLI's own default | This is where you *want* the coding agent. |
+
+Which flags a given CLI build accepts is probed from its `--help` once per binary, so a build that
+predates a flag degrades rather than failing — an unrecognised flag makes the CLI exit non-zero and
+loses the turn.
+
+The result: your subscription reaches the model, and the model behaves like the chat model it is.
 
 ---
 
@@ -111,9 +134,9 @@ The key is not entitled to that model or endpoint. Coding Plan keys only work on
 endpoint. Try the provider's default model.
 
 **"CLI installed but not signed in."**
-The session expired or was never created. Click **Sign in again**, or run `claude` / `codex login`
-in your own terminal — the app picks up the result on its next check (every 30 seconds, or click
-**Re-check**).
+The session expired or was never created. Click **Sign in again**, or run `claude auth login` /
+`codex login` in your own terminal — the app picks up the result on its next check (every 30
+seconds, or click **Re-check**). `claude auth status` shows what the CLI currently thinks.
 
 **Sign-in terminal shows nothing.**
 The CLI could not start. Check **Settings → Advanced → CLI path**; a desktop-launched app inherits a

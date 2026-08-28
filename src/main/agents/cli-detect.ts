@@ -105,6 +105,64 @@ export async function detectCli(
   };
 }
 
+/**
+ * Which optional flags a CLI build actually accepts.
+ *
+ * These flags come and go between releases, and an unknown flag is not a soft
+ * failure — the CLI exits non-zero and the turn is lost. Probing `--help` once
+ * per binary lets the newest capabilities be used where they exist and skipped
+ * where they do not.
+ */
+export interface CliCapabilities {
+  systemPrompt: boolean;
+  appendSystemPrompt: boolean;
+  allowedTools: boolean;
+  disallowedTools: boolean;
+  partialMessages: boolean;
+  excludeDynamicSections: boolean;
+}
+
+const capabilityCache = new Map<string, CliCapabilities>();
+
+export async function probeCapabilities(binary: string): Promise<CliCapabilities> {
+  const cached = capabilityCache.get(binary);
+  if (cached) return cached;
+
+  let help = '';
+  try {
+    const { stdout } = await execFileAsync(binary, ['--help'], {
+      timeout: 15_000,
+      maxBuffer: 4_000_000,
+      env: { ...process.env, PATH: enrichedPath() },
+    });
+    help = stdout;
+  } catch (err) {
+    log.debug(`could not probe ${binary}`, err);
+  }
+
+  const has = (flag: string) => help.includes(flag);
+  const capabilities: CliCapabilities = {
+    systemPrompt: has('--system-prompt'),
+    appendSystemPrompt: has('--append-system-prompt'),
+    allowedTools: has('--allowedTools') || has('--allowed-tools'),
+    disallowedTools: has('--disallowedTools') || has('--disallowed-tools'),
+    partialMessages: has('--include-partial-messages'),
+    excludeDynamicSections: has('--exclude-dynamic-system-prompt-sections'),
+  };
+  capabilityCache.set(binary, capabilities);
+  log.debug(`capabilities for ${binary}`, capabilities);
+  return capabilities;
+}
+
+/** The subcommand that starts each CLI's own sign-in flow. */
+export const CLI_LOGIN_ARGS: Record<ProviderId, string[]> = {
+  // `claude auth login` is the documented entry point; bare `claude` only
+  // prompts for sign-in when it happens to have no session.
+  glm: ['auth', 'login'],
+  anthropic: ['auth', 'login'],
+  openai: ['login'],
+};
+
 /** Install hints shown when a CLI is missing. */
 export const CLI_INSTALL_HINT: Record<ProviderId, string> = {
   glm: 'npm install -g @anthropic-ai/claude-code   (GLM Studio points it at Z.ai for you)',

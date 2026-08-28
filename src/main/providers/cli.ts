@@ -3,7 +3,8 @@ import type { ChatRequest, ConnectionTestResult, ProviderId } from '@shared/type
 import { PROVIDER_CLI } from '@shared/models';
 import { readJsonLines } from '../net/sse';
 import { buildCliEnv } from '../agents/env';
-import { CLI_INSTALL_HINT, detectCli } from '../agents/cli-detect';
+import { CLI_INSTALL_HINT, detectCli, probeCapabilities } from '../agents/cli-detect';
+import { claudeArgs, discussionSystemPrompt } from './cli-args';
 import { readCliCredentials } from '../auth/cli-credentials';
 import { loadSettings } from '../store/settings';
 import { createLogger } from '../util/logger';
@@ -35,7 +36,8 @@ export class CliProvider implements ProviderAdapter {
     if (!prompt) throw new Error('Nothing to send: the last message is empty.');
 
     const isCodex = PROVIDER_CLI[this.provider].command === 'codex';
-    const args = isCodex ? codexArgs(req) : claudeArgs(req);
+    const capabilities = await probeCapabilities(status.path!);
+    const args = isCodex ? codexArgs(req) : claudeArgs(req, capabilities);
 
     log.debug(`spawning ${status.path} ${args.join(' ')}`);
 
@@ -61,7 +63,14 @@ export class CliProvider implements ProviderAdapter {
     });
 
     // The prompt goes over stdin so it never appears in the process table.
-    child.stdin.write(prompt);
+    // Codex has no flag to replace its system prompt, so a discussion turn
+    // carries its framing in the prompt itself.
+    const policy = req.toolPolicy ?? 'full';
+    const framed =
+      isCodex && policy !== 'full'
+        ? `${discussionSystemPrompt(undefined, policy)}\n\n---\n\n${prompt}`
+        : prompt;
+    child.stdin.write(framed);
     child.stdin.end();
 
     try {
@@ -126,23 +135,6 @@ export class CliProvider implements ProviderAdapter {
 }
 
 /* --------------------------------------------------------- argument sets -- */
-
-function claudeArgs(req: ChatRequest): string[] {
-  const args = [
-    '--print',
-    '--output-format',
-    'stream-json',
-    // stream-json requires --verbose, and partial messages give token-level
-    // deltas instead of one block at the end of the turn.
-    '--verbose',
-    '--include-partial-messages',
-  ];
-  if (req.model) args.push('--model', req.model);
-  // Resuming keeps the CLI's own context instead of replaying the transcript.
-  if (req.cliSessionId) args.push('--resume', req.cliSessionId);
-  if (req.systemPrompt?.trim()) args.push('--append-system-prompt', req.systemPrompt.trim());
-  return args;
-}
 
 function codexArgs(req: ChatRequest): string[] {
   const args = ['exec', '--json', '--skip-git-repo-check'];
