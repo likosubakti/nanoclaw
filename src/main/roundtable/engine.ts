@@ -375,6 +375,10 @@ async function runTurn(
     status: turn.status,
     meta: turn.meta,
     error: turn.error,
+    // Carried, not looked up: the turn is not in the room or on disk yet — it
+    // is pushed only after every turn in the round has finished.
+    content: turn.content,
+    activity: turn.activity,
   });
 
   return turn;

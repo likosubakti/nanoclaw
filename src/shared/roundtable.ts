@@ -392,6 +392,15 @@ export type RoundtableEvent =
       status: TurnStatus;
       meta?: MessageMeta;
       error?: string;
+      /**
+       * The finished answer and its research trail, carried on the event.
+       *
+       * A consumer cannot read these back from the store: the engine pushes
+       * turns into the round only once every turn in it has finished, so at the
+       * moment this fires the turn exists in neither the room nor the file.
+       */
+      content?: string;
+      activity?: ActivityEvent[];
     }
   | { type: 'vote'; roomId: string; roundIndex: number; vote: Vote }
   | { type: 'moderator-start'; roomId: string; roundIndex: number; phase: 'brief' | 'verdict' }

@@ -140,21 +140,46 @@ function telegramCard(): HTMLElement {
     );
 
     clear(pairLine);
-    if (status.status === 'running' && status.allowedChatIds.length === 0) {
+    if (status.status === 'running') {
+      const live = Boolean(status.pairingCode);
       pairLine.appendChild(
         h(
           'div',
-          { class: 'note warn', style: { marginTop: '8px' } },
-          h('div', { text: 'No chat is paired yet, so the bot will not answer anyone.' }),
+          { class: `note ${status.allowedChatIds.length === 0 ? 'warn' : ''}`, style: { marginTop: '8px' } },
+          status.allowedChatIds.length === 0
+            ? h('div', { text: 'No chat is paired yet, so the bot will not answer anyone.' })
+            : h('div', { text: 'Pair another chat.' }),
+          live
+            ? h(
+                'div',
+                { style: { marginTop: '6px' } },
+                'Message your bot: ',
+                h('code', { text: `/pair ${status.pairingCode}` }),
+              )
+            : h('div', { class: 'hint', style: { marginTop: '6px' }, text: 'No code is active.' }),
           h(
             'div',
-            { style: { marginTop: '6px' } },
-            'Message your bot: ',
-            h('code', { text: `/pair ${status.pairingCode}` }),
+            { class: 'row', style: { marginTop: '8px' } },
+            h(
+              'button',
+              {
+                class: live ? 'btn' : 'btn primary',
+                on: {
+                  click: async () => {
+                    await api.telegram.newCode();
+                    await refresh();
+                  },
+                },
+              },
+              icon('refresh', 13),
+              live ? 'New code' : 'Get a code',
+            ),
           ),
           h('div', {
             class: 'hint',
-            text: 'The code changes each time the bridge starts, so an old screenshot cannot pair a chat later.',
+            // Said plainly because the guarantee is what makes six digits safe:
+            // the bot answers every guess, so the code has to die quickly.
+            text: 'A code works once, expires after 10 minutes, and is revoked after five wrong guesses. Get a new one whenever you need to pair.',
           }),
         ),
       );

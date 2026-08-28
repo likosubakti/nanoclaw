@@ -143,6 +143,9 @@ const api = {
     stop: (): Promise<unknown> => ipcRenderer.invoke(IPC.telegramStop),
     setToken: (token: string): Promise<unknown> => ipcRenderer.invoke(IPC.telegramSetToken, token),
     unpair: (chatId: number): Promise<AppSettings> => ipcRenderer.invoke(IPC.telegramUnpair, chatId),
+    /** Issues a fresh pairing code; the previous one stops working. */
+    newCode: (): Promise<{ pairingCode: string; expiresInMs: number }> =>
+      ipcRenderer.invoke(IPC.telegramNewCode),
   },
 
   app: {

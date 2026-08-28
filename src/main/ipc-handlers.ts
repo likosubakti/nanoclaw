@@ -23,7 +23,7 @@ import {
   toMarkdown,
 } from './store/conversations';
 import { clearSecret, secretsBackend, setSecret } from './store/secrets';
-import { loadSettings, resetSettings, saveSettings } from './store/settings';
+import { loadSettings, resetSettings, saveSettings, unpairChat } from './store/settings';
 import {
   killTerminal,
   listTerminals,
@@ -42,7 +42,15 @@ import {
   roomToMarkdown,
   saveRoom,
 } from './roundtable/store';
-import { bridgeStatus, broadcast, startBridge, stopBridge } from './telegram/bridge';
+import {
+  bridgeStatus,
+  broadcast,
+  PAIRING_TTL_MS,
+  revokePairingCode,
+  rotatePairingCode,
+  startBridge,
+  stopBridge,
+} from './telegram/bridge';
 import { CONFIG_DIR, DATA_DIR } from './store/paths';
 import { createLogger } from './util/logger';
 
@@ -303,17 +311,17 @@ export function registerIpcHandlers(getWindow: () => BrowserWindow | null): void
     return bridgeStatus();
   });
 
+  ipcMain.handle(IPC.telegramNewCode, () => ({
+    pairingCode: rotatePairingCode(),
+    expiresInMs: PAIRING_TTL_MS,
+  }));
+
   ipcMain.handle(IPC.telegramUnpair, (_event, chatId: unknown) => {
-    const settings = loadSettings();
-    const id = Number(chatId);
-    return saveSettings({
-      telegram: {
-        ...settings.telegram,
-        allowedChatIds: settings.telegram.allowedChatIds.filter((c) => c !== id),
-        broadcastChatId:
-          settings.telegram.broadcastChatId === id ? undefined : settings.telegram.broadcastChatId,
-      },
-    });
+    const settings = unpairChat(Number(chatId));
+    // Unpairing that did not revoke the code left the chat able to simply
+    // re-pair with the same six digits it already had.
+    revokePairingCode();
+    return settings;
   });
 
   /* ---------------------------------------------------------------- misc -- */

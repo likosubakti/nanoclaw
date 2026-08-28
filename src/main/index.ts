@@ -70,7 +70,12 @@ if (!app.requestSingleInstanceLock()) {
     // Reconnect the Telegram bridge if it was left enabled, so a remote watcher
     // does not have to open the app to restore it.
     if (loadSettings().telegram.enabled) {
-      void startBridge().then((result) => log.info(`telegram: ${result.message}`));
+      void startBridge().then((result) => {
+        // Only the failure. The success message contains the live pairing code,
+        // and the log is a plaintext file that outlives the code and gets
+        // attached to bug reports.
+        if (!result.ok) log.warn(`telegram: ${result.message}`);
+      });
     }
 
     log.info(`GLM Studio ready (electron ${process.versions.electron})`);

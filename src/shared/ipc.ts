@@ -64,6 +64,7 @@ export const IPC = {
   telegramStop: 'telegram:stop',
   telegramSetToken: 'telegram:set-token',
   telegramUnpair: 'telegram:unpair',
+  telegramNewCode: 'telegram:new-code',
 
   // misc
   diagnostics: 'app:diagnostics',

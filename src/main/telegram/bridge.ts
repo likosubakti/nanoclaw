@@ -1,12 +1,14 @@
-import { randomInt } from 'node:crypto';
 import type { RoundMode, RoundtableEvent } from '@shared/roundtable';
 import { ROUND_MODES } from '@shared/roundtable';
 import { getSecret } from '../store/secrets';
-import { loadSettings, saveSettings } from '../store/settings';
+import { loadSettings, pairChat } from '../store/settings';
 import { createLogger } from '../util/logger';
 import { abortRoom, runRound } from '../roundtable/engine';
 import { createRoom, getRoom, listRooms } from '../roundtable/store';
 import { esc, getMe, getUpdates, sendMessage, TelegramError, type TelegramUpdate } from './api';
+import { MAX_PAIR_ATTEMPTS, PairingCode, PAIRING_TTL_MS } from './pairing';
+
+export { PAIRING_TTL_MS };
 
 const log = createLogger('telegram');
 
@@ -15,9 +17,17 @@ const log = createLogger('telegram');
  *
  * Security model. A bot token is not a secret from the people who can find the
  * bot — anyone who knows its username can message it. So the bridge answers
- * nobody by default. The app shows a one-time pairing code, and only a chat
- * that sends that code is added to the allow list and can thereafter drive
- * rooms. Unpaired chats get a single refusal and are otherwise ignored.
+ * nobody by default. The app shows a pairing code, and only a chat that sends
+ * that code is added to the allow list and can thereafter drive rooms.
+ * Unpaired chats get a single refusal and are otherwise ignored.
+ *
+ * The code is genuinely one-time. It is six digits — 900,000 possibilities,
+ * and the bot answers every guess, so it is its own oracle — which is only
+ * safe because a code dies the moment it is used, ten minutes after it is
+ * issued, or after five wrong guesses, whichever comes first. A code that
+ * merely rotated per launch would be a static shared secret for the machine's
+ * uptime, and what it unlocks is total: every discussion, every transcript,
+ * and unmetered spending on the owner's plans.
  *
  * Turn text is posted as each turn completes rather than streamed: Telegram
  * rate-limits edits, and a token-by-token mirror would be throttled into
@@ -30,22 +40,39 @@ interface BridgeState {
   status: Status;
   username?: string;
   error?: string;
-  /** The code the user must send to pair a chat. Rotates on each start. */
-  pairingCode: string;
+  /** Chats already told the bot is private, so they are told exactly once. */
+  refused: Set<number>;
   /** The room a given chat is currently driving. */
   activeRoom: Map<number, string>;
   activeMode: Map<number, RoundMode>;
 }
 
+const pairing = new PairingCode();
+
 const state: BridgeState = {
   status: 'stopped',
-  pairingCode: '',
+  refused: new Set(),
   activeRoom: new Map(),
   activeMode: new Map(),
 };
 
+/** A cap so a flood of strangers cannot grow the refusal set without bound. */
+const MAX_REFUSED = 500;
+
 let controller: AbortController | null = null;
 let offset = 0;
+/** The token `pollLoop` is actually polling with, so a change can be noticed. */
+let activeToken: string | null = null;
+
+/** Issues a fresh pairing code and invalidates whatever came before it. */
+export function rotatePairingCode(): string {
+  return pairing.issue();
+}
+
+/** Called when a chat is unpaired: it must not be able to simply re-pair. */
+export function revokePairingCode(): void {
+  pairing.revoke();
+}
 
 export function bridgeStatus(): {
   status: Status;
@@ -58,17 +85,27 @@ export function bridgeStatus(): {
     status: state.status,
     username: state.username,
     error: state.error,
-    pairingCode: state.pairingCode,
+    pairingCode: pairing.live(),
     allowedChatIds: loadSettings().telegram.allowedChatIds,
   };
 }
 
 export async function startBridge(): Promise<{ ok: boolean; message: string }> {
+  const saved = getSecret('telegram.botToken');
+
   if (state.status === 'running' || state.status === 'starting') {
-    return { ok: true, message: `Already connected as @${state.username ?? '…'}.` };
+    // A token saved while the bridge runs never reached the poll loop, which
+    // captured its token as a parameter — so the bridge listened as the old bot
+    // and mirrored as the new one, and a revoked token left it permanently deaf
+    // while Settings still showed "Connected".
+    if (saved && saved === activeToken) {
+      return { ok: true, message: `Already connected as @${state.username ?? '…'}.` };
+    }
+    log.info('bot token changed, rebinding the bridge');
+    stopBridge();
   }
 
-  const token = getSecret('telegram.botToken');
+  const token = saved;
   if (!token) {
     state.status = 'error';
     state.error = 'No bot token saved.';
@@ -77,8 +114,7 @@ export async function startBridge(): Promise<{ ok: boolean; message: string }> {
 
   state.status = 'starting';
   state.error = undefined;
-  // A fresh code per session, so an old screenshot cannot pair a chat later.
-  state.pairingCode = String(randomInt(100_000, 999_999));
+  rotatePairingCode();
 
   try {
     const me = await getMe(token);
@@ -90,18 +126,29 @@ export async function startBridge(): Promise<{ ok: boolean; message: string }> {
   }
 
   controller = new AbortController();
+  activeToken = token;
   state.status = 'running';
   void pollLoop(token, controller.signal);
 
+  // Never the pairing code: it is a live credential, and the log outlives it.
   log.info(`bridge running as @${state.username}`);
-  return { ok: true, message: `Connected as @${state.username}. Send /pair ${state.pairingCode} to your bot.` };
+  // The code is not in this message either. It is a live credential, the
+  // message is echoed into the log on the auto-start path, and the Settings
+  // screen shows the code from `bridgeStatus()` anyway.
+  return { ok: true, message: `Connected as @${state.username}.` };
 }
 
 export function stopBridge(): void {
   controller?.abort();
   controller = null;
+  activeToken = null;
+  // A different bot numbers its updates independently, so a carried-over
+  // cursor would filter out the new bot's first messages.
+  offset = 0;
   state.status = 'stopped';
   state.activeRoom.clear();
+  state.refused.clear();
+  revokePairingCode();
   log.info('bridge stopped');
 }
 
@@ -166,14 +213,13 @@ async function handleUpdate(token: string, update: TelegramUpdate): Promise<void
   // Pairing is the only thing an unpaired chat may do.
   if (!allowed) {
     const pair = /^\/pair(?:@\w+)?\s+(\d{6})$/.exec(text);
-    if (pair && state.pairingCode && pair[1] === state.pairingCode) {
-      saveSettings({
-        telegram: {
-          ...settings.telegram,
-          allowedChatIds: [...settings.telegram.allowedChatIds, chatId],
-          broadcastChatId: settings.telegram.broadcastChatId ?? chatId,
-        },
-      });
+    const hadCode = Boolean(pairing.live());
+
+    // `check` consumes the code on success and burns it after enough wrong
+    // guesses: the bot answers every guess, so it is an oracle over 900,000
+    // codes, and the attacker's patience is not the resource worth exhausting.
+    if (pair && pairing.check(pair[1])) {
+      pairChat(chatId);
       log.info(`paired chat ${chatId}`);
       await sendMessage(
         token,
@@ -195,9 +241,17 @@ async function handleUpdate(token: string, update: TelegramUpdate): Promise<void
       return;
     }
 
-    // One refusal, then silence — an unpaired chat should not get a reply per
-    // message, which would make the bot a nuisance to whoever found it.
-    if (/^\/(start|pair|help)/.test(text)) {
+    if (pair && hadCode && !pairing.live()) {
+      log.warn(`pairing code revoked after ${MAX_PAIR_ATTEMPTS} wrong guesses`);
+    }
+
+    // One refusal, then silence. Nothing recorded that a chat had been told,
+    // so a stranger sending /start in a loop got a reply every time — each one
+    // a full round trip inside the serially-awaited poll loop, which delays the
+    // owner's own /stop behind the flood.
+    if (/^\/(start|pair|help)/.test(text) && !state.refused.has(chatId)) {
+      if (state.refused.size >= MAX_REFUSED) state.refused.clear();
+      state.refused.add(chatId);
       await sendMessage(token, chatId, 'This bot is private. Send /pair with the code shown in GLM Studio.');
     }
     return;
@@ -320,24 +374,33 @@ async function startRound(
     `<b>Round starting</b> — ${ROUND_MODES.find((m) => m.mode === mode)?.label ?? mode}`,
   );
 
-  // Fire and forget: the round posts its own progress through the broadcaster.
-  void runRound({ roomId, mode, message }, (event) => void broadcast(event));
+  // Fire and forget: the round posts its own progress through the broadcaster,
+  // back to the chat that asked. Without the chatId it went to the global sink
+  // — the first chat ever paired — so whoever started the round saw nothing
+  // after "Round starting", and a private topic surfaced in a team group.
+  void runRound({ roomId, mode, message }, (event) => void broadcast(event, chatId));
 }
 
 /* ----------------------------------------------------------- broadcast --- */
 
 /**
- * Mirrors round progress to the paired chat.
+ * Mirrors round progress to a paired chat.
  *
  * Deliberately coarse. Only events a person reading on a phone would want are
  * posted — who is speaking, what they searched, what they concluded — because
  * every post costs a round trip and Telegram throttles chatty bots.
+ *
+ * `to` is the chat that asked. Rounds started in the app have no such chat, so
+ * they fall back to the configured sink.
  */
-export async function broadcast(event: RoundtableEvent): Promise<void> {
+export async function broadcast(event: RoundtableEvent, to?: number): Promise<void> {
   const settings = loadSettings();
   if (!settings.telegram.enabled || state.status !== 'running') return;
 
-  const chatId = settings.telegram.broadcastChatId ?? settings.telegram.allowedChatIds[0];
+  const chatId =
+    to && settings.telegram.allowedChatIds.includes(to)
+      ? to
+      : (settings.telegram.broadcastChatId ?? settings.telegram.allowedChatIds[0]);
   if (!chatId) return;
 
   const token = getSecret('telegram.botToken');
@@ -366,17 +429,22 @@ export function formatEvent(event: RoundtableEvent): string | null {
         .join('\n');
 
     case 'turn-end': {
-      const room = getRoom(event.roomId);
-      const seat = room?.seats.find((s) => s.id === event.seatId);
-      const turn = room?.rounds.flatMap((r) => r.turns).find((t) => t.id === event.turnId);
+      const seat = getRoom(event.roomId)?.seats.find((s) => s.id === event.seatId);
       if (!seat) return null;
 
       if (event.status === 'error') {
         return `⚠️ <b>${esc(seat.name)}</b> could not answer — ${esc(truncate(event.error ?? '', 200))}`;
       }
-      if (!turn?.content.trim()) return null;
 
-      const trail = turn.activity
+      // The answer rides on the event. Reading it back out of the store, as
+      // this did, could never work: the engine pushes turns into the round
+      // only after every turn has finished, so at this instant the turn is on
+      // neither disk nor the room — and so the mirror posted the failures and
+      // never a single answer.
+      const content = event.content?.trim();
+      if (!content) return null;
+
+      const trail = (event.activity ?? [])
         .slice(0, 6)
         .map((a) => `· ${a.kind} ${esc(truncate(a.query ?? a.url ?? a.detail ?? '', 70))}`)
         .join('\n');
@@ -384,7 +452,9 @@ export function formatEvent(event: RoundtableEvent): string | null {
       return [
         `<b>${esc(seat.name)}</b>${seat.role ? ` <i>(${esc(truncate(seat.role, 60))})</i>` : ''}`,
         trail ? `<pre>${trail}</pre>` : '',
-        esc(truncate(turn.content, 2500)),
+        // Not truncated here: sendMessage splits at paragraph boundaries, which
+        // is what the docs promise. The cap is a runaway guard, not a limit.
+        esc(truncate(content, 12_000)),
       ]
         .filter(Boolean)
         .join('\n');

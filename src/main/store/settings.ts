@@ -94,10 +94,57 @@ export function saveSettings(patch: Partial<AppSettings>): AppSettings {
     }
   }
 
-  const next = merge({ ...current, ...patch, providers });
+  // The pairing state is owned by the main process, never by a patch. The
+  // renderer's snapshot of settings is taken at boot and refreshed only by its
+  // own writes, so it never sees a chat that paired from a phone — and toggling
+  // the bridge sent that stale `allowedChatIds: []` back, silently unpairing
+  // every chat. Pairing changes go through pairChat/unpairChat below.
+  const telegram = {
+    ...current.telegram,
+    ...(patch.telegram ?? {}),
+    allowedChatIds: current.telegram.allowedChatIds,
+    broadcastChatId: current.telegram.broadcastChatId,
+  };
+
+  const next = merge({ ...current, ...patch, providers, telegram });
   writeFileSync(SETTINGS_FILE, JSON.stringify(next, null, 2), { mode: 0o600 });
   cached = next;
   log.debug('settings saved');
+  return next;
+}
+
+/**
+ * Adds a chat to the allow list. Separate from `saveSettings` because pairing
+ * is main-process state: a renderer patch must never be able to grant or
+ * revoke it, and must never revert it by carrying a stale snapshot.
+ */
+export function pairChat(chatId: number): AppSettings {
+  const current = loadSettings();
+  if (current.telegram.allowedChatIds.includes(chatId)) return current;
+  return writeTelegram({
+    allowedChatIds: [...current.telegram.allowedChatIds, chatId],
+    // The first chat to pair becomes the default sink for rounds started in
+    // the app, which have no chat of their own.
+    broadcastChatId: current.telegram.broadcastChatId ?? chatId,
+  });
+}
+
+/** Removes a chat, and repoints the broadcast sink if it was that chat. */
+export function unpairChat(chatId: number): AppSettings {
+  const current = loadSettings();
+  const allowedChatIds = current.telegram.allowedChatIds.filter((id) => id !== chatId);
+  return writeTelegram({
+    allowedChatIds,
+    broadcastChatId:
+      current.telegram.broadcastChatId === chatId ? allowedChatIds[0] : current.telegram.broadcastChatId,
+  });
+}
+
+function writeTelegram(patch: Partial<AppSettings['telegram']>): AppSettings {
+  const current = loadSettings();
+  const next = merge({ ...current, telegram: { ...current.telegram, ...patch } });
+  writeFileSync(SETTINGS_FILE, JSON.stringify(next, null, 2), { mode: 0o600 });
+  cached = next;
   return next;
 }
 
