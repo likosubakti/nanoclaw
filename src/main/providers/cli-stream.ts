@@ -98,8 +98,18 @@ export function createClaudeParser(streamId: string): StreamParser {
         out.push({
           type: 'usage',
           streamId: id,
-          inputTokens: e.usage.input_tokens,
-          outputTokens: e.usage.output_tokens,
+          // Cache tokens are the overwhelming majority for a CLI seat: a turn
+          // carrying a full system prompt measures input_tokens 2 against
+          // cache_creation_input_tokens 38,732, and a resumed seat pays the
+          // same again as cache_read. Counting only the first made the header's
+          // token total — the thing that makes unbounded spend visible — wrong
+          // by orders of magnitude.
+          inputTokens: sum(
+            e.usage.input_tokens,
+            e.usage.cache_creation_input_tokens,
+            e.usage.cache_read_input_tokens,
+          ),
+          outputTokens: sum(e.usage.output_tokens),
         });
       }
       if (e.is_error && e.result) {
@@ -166,8 +176,8 @@ export function createCodexParser(streamId: string): StreamParser {
         out.push({
           type: 'usage',
           streamId: id,
-          inputTokens: msg.info?.total_token_usage?.input_tokens,
-          outputTokens: msg.info?.total_token_usage?.output_tokens,
+          inputTokens: sum(msg.info?.total_token_usage?.input_tokens),
+          outputTokens: sum(msg.info?.total_token_usage?.output_tokens),
         });
         return out;
       case 'error':
@@ -175,6 +185,19 @@ export function createCodexParser(streamId: string): StreamParser {
         return out;
       default:
         break;
+    }
+
+    // Newer codex reports usage here instead of in a `token_count` message.
+    // Without this case a Codex seat contributed zero to the room's total.
+    // `cached_input_tokens` is a subset of `input_tokens`, not an addition.
+    if (e.type === 'turn.completed' && e.usage) {
+      out.push({
+        type: 'usage',
+        streamId: id,
+        inputTokens: sum(e.usage.input_tokens),
+        outputTokens: sum(e.usage.output_tokens),
+      });
+      return out;
     }
 
     if (e.type === 'item.completed' && e.item) {
@@ -240,6 +263,19 @@ export function describeTool(
     default:
       return { name, detail: summarise(input) };
   }
+}
+
+/** Adds the numeric fields a usage payload actually carried. */
+function sum(...values: unknown[]): number | undefined {
+  let total = 0;
+  let seen = false;
+  for (const value of values) {
+    if (typeof value === 'number' && Number.isFinite(value)) {
+      total += value;
+      seen = true;
+    }
+  }
+  return seen ? total : undefined;
 }
 
 export function summarise(value: unknown): string | undefined {

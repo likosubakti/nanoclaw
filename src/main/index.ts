@@ -8,6 +8,7 @@ import { initLogger, createLogger } from './util/logger';
 import { killAllTerminals, onTerminalEvent } from './agents/terminal';
 import { abortAll } from './providers/registry';
 import { abortAllRooms } from './roundtable/engine';
+import { setRelayWindow } from './roundtable/relay';
 import { startBridge, stopBridge } from './telegram/bridge';
 import { loadSettings } from './store/settings';
 import { runSmokeCheck } from './smoke';
@@ -46,6 +47,9 @@ if (!app.requestSingleInstanceLock()) {
   app.whenReady().then(() => {
     registerIpcHandlers(getWindow);
     buildMenu(getWindow);
+    // Lets a round started from Telegram reach the open window, which the
+    // bridge cannot do directly without importing the IPC layer that imports it.
+    setRelayWindow(getWindow);
 
     // Terminal output is high-frequency; forward it straight to the renderer
     // rather than buffering it in the main process.

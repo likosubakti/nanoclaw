@@ -146,12 +146,9 @@ async function resyncFromDisk(): Promise<void> {
   }
 
   // A live round re-attaches through the event stream; a finished one is
-  // simply repainted from what was persisted.
-  if (!roundRunning) {
-    live.clear();
-    liveModerator = null;
-    seatStatus.clear();
-  }
+  // simply repainted from what was persisted. `paintTranscript` drops the card
+  // references either way, since it destroys the DOM they point into.
+  if (!roundRunning) seatStatus.clear();
   paintSeatStrip();
   paintTranscript();
   update({});
@@ -797,7 +794,12 @@ function setSeatStatus(seatId: string, label: string, busy: boolean, detail?: st
 function paintTranscript(): void {
   if (!transcriptEl || !room) return;
   clear(transcriptEl);
+  // Every card just went out of the document. Anything still holding one is
+  // holding a detached node: the moderator's streaming card would keep filling
+  // an orphaned tree, and `replaceWith` would insert the parsed brief there
+  // instead of the transcript, so it never appeared at all.
   live.clear();
+  liveModerator = null;
 
   if (room.rounds.length === 0) {
     transcriptEl.appendChild(openingCard());
@@ -1216,6 +1218,9 @@ async function send(): Promise<void> {
   composerEl.value = '';
   autosize(composerEl);
 
+  // The optimistic round block renders this; without it the round appeared
+  // with no sign of what was asked.
+  notePendingPrompt(message);
   await api.rooms.run({ roomId: room.id, mode: selectedMode, message });
 }
 
@@ -1553,9 +1558,19 @@ function handleEvent(event: RoundtableEvent): void {
         selectedMode = 'synthesis';
       }
 
-      // Refresh from disk so the transcript matches what was persisted.
+      // Refresh from disk so the transcript matches what was persisted, then
+      // repaint. `update({})` alone does not: mountView early-returns when
+      // neither the view nor the room changed, so a round that streamed while
+      // the view was unmounted was never drawn at all — and the engine writes
+      // a round's turns only once every turn has finished, so this is the first
+      // moment they exist to draw.
       void api.rooms.get(room.id).then((fresh) => {
         if (fresh) room = fresh;
+        live.clear();
+        liveModerator = null;
+        seatStatus.clear();
+        paintSeatStrip();
+        paintTranscript();
         update({});
       });
       break;

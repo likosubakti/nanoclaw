@@ -57,8 +57,12 @@ export function renderAgents(container: HTMLElement): void {
     activate(activeId);
   }
 
-  unsubscribe?.();
-  unsubscribe = api.terminal.onEvent(handleTerminalEvent);
+  // Subscribed once and kept across view changes. The main process forwards
+  // pty output with no buffering and keeps no scrollback, so anything a CLI
+  // wrote while the user was in Chat or Settings was gone for good — and a
+  // missed `exit` left the tab showing a green dot over a session that had
+  // already been reaped, silently swallowing every keystroke.
+  unsubscribe ??= api.terminal.onEvent(handleTerminalEvent);
 
   resizeObserver?.disconnect();
   resizeObserver = new ResizeObserver(() => fitActive());
@@ -444,8 +448,10 @@ function shortenPath(dir: string): string {
 }
 
 export function teardownAgents(): void {
-  unsubscribe?.();
-  unsubscribe = null;
+  // Deliberately not unsubscribing: terminals keep running while this view is
+  // unmounted, and handleTerminalEvent is safe without a mounted DOM — writes
+  // land in each pane's detached xterm buffer, paintTabs early-returns, and
+  // toast mounts its own host.
   resizeObserver?.disconnect();
   resizeObserver = null;
   tabsBar = null;

@@ -4,6 +4,7 @@ import { getSecret } from '../store/secrets';
 import { loadSettings, pairChat } from '../store/settings';
 import { createLogger } from '../util/logger';
 import { abortRoom, runRound } from '../roundtable/engine';
+import { relayToWindow } from '../roundtable/relay';
 import { createRoom, getRoom, listRooms } from '../roundtable/store';
 import { esc, getMe, getUpdates, sendMessage, TelegramError, type TelegramUpdate } from './api';
 import { MAX_PAIR_ATTEMPTS, PairingCode, PAIRING_TTL_MS } from './pairing';
@@ -378,7 +379,13 @@ async function startRound(
   // back to the chat that asked. Without the chatId it went to the global sink
   // — the first chat ever paired — so whoever started the round saw nothing
   // after "Round starting", and a private topic surfaced in a team group.
-  void runRound({ roomId, mode, message }, (event) => void broadcast(event, chatId));
+  void runRound({ roomId, mode, message }, (event) => {
+    // The app may have the same room open. Without this it never learned the
+    // round had started, so it stayed unlocked and a seat edit made during the
+    // round overwrote the room file the engine was still writing.
+    relayToWindow(event);
+    void broadcast(event, chatId);
+  });
 }
 
 /* ----------------------------------------------------------- broadcast --- */

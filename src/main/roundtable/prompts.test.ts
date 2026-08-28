@@ -233,3 +233,66 @@ test('failed turns never enter the transcript', () => {
   const text = renderTranscript(r, 0);
   assert.ok(!text.includes('boom'), 'an error must not be presented to the room as a contribution');
 });
+
+
+/* --------------------------------------------- decorated brief headers -- */
+
+const DECORATED = room([seat('a', 'Claude'), seat('b', 'GLM')]);
+
+test('a brief with bolded headers keeps each seat’s instruction private', () => {
+  // Models emphasise the headers they were shown. When the parser insisted on
+  // the bare token, the agenda swallowed the rest of the reply — so every
+  // participant read the instructions written for the others, which is exactly
+  // the tailoring the moderator exists to produce.
+  const parsed = parseBrief(
+    DECORATED,
+    [
+      '**AGENDA:**',
+      'Decide whether to migrate off the monolith.',
+      '',
+      '**FOR Claude:**',
+      'Argue the product cost of a freeze.',
+      '',
+      '**FOR GLM:**',
+      'Model the migration arithmetic.',
+      '',
+      '**NOTES:**',
+      'none',
+    ].join('\n'),
+  );
+  assert.equal(parsed.agenda, 'Decide whether to migrate off the monolith.');
+  assert.equal(parsed.perSeat.a, 'Argue the product cost of a freeze.');
+  assert.equal(parsed.perSeat.b, 'Model the migration arithmetic.');
+  assert.equal(parsed.notes, undefined, '"none" must not become a note of "**"');
+});
+
+test('markdown heading and list markers on headers parse the same', () => {
+  for (const [open, forA, forB] of [
+    ['## AGENDA:', '## FOR Claude:', '## FOR GLM:'],
+    ['- AGENDA:', '- FOR Claude:', '- FOR GLM:'],
+    ['> AGENDA:', '> FOR Claude:', '> FOR GLM:'],
+  ]) {
+    const parsed = parseBrief(DECORATED, `${open}\nX\n\n${forA}\nY\n\n${forB}\nZ`);
+    assert.equal(parsed.agenda, 'X', open);
+    assert.equal(parsed.perSeat.a, 'Y', forA);
+    assert.equal(parsed.perSeat.b, 'Z', forB);
+  }
+});
+
+test('an inline bolded header does not drag its emphasis into the section', () => {
+  const parsed = parseBrief(DECORATED, '**AGENDA:** Ship it.\n\n**FOR Claude:** Say why not.');
+  assert.equal(parsed.agenda, 'Ship it.');
+  assert.equal(parsed.perSeat.a, 'Say why not.');
+});
+
+test('a horizontal rule between sections is not mistaken for content', () => {
+  const parsed = parseBrief(DECORATED, 'AGENDA:\nX\n\n---\n\nFOR Claude:\nY');
+  assert.equal(parsed.agenda, 'X');
+  assert.equal(parsed.perSeat.a, 'Y');
+});
+
+test('a brief that ignores the format entirely is still usable', () => {
+  const parsed = parseBrief(DECORATED, 'Just talk about the migration.');
+  assert.equal(parsed.agenda, 'Just talk about the migration.');
+  assert.deepEqual(parsed.perSeat, {});
+});

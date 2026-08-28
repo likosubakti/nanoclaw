@@ -294,6 +294,30 @@ export function verdictPrompt(room: Room): string {
  * instruction" rather than abort the round. The moderator is scaffolding, and
  * scaffolding failing should never take the discussion down with it.
  */
+/**
+ * Where one section of the brief ends: at the next header, whatever the model
+ * decorated it with.
+ *
+ * Models emphasise the headers they were shown — `**FOR Claude:**`, `## NOTES:`,
+ * `- FOR GLM:`. Requiring the bare token meant the first section swallowed the
+ * rest of the reply, and this does not fail loudly: the agenda becomes every
+ * seat's private instruction, and `instructionForSeat` then shows each
+ * participant what was written for the others. A brief that reads the same to a
+ * cryptographer and a product lead is the one thing the moderator exists to
+ * prevent.
+ */
+// The decoration classes and \s are disjoint, so the nested quantifiers
+// cannot backtrack ambiguously.
+const SECTION_END = String.raw`(?=\n\s*(?:[*_#>+-]+\s*)*(?:FOR\s+|NOTES:)|$)`;
+
+/** Removes the emphasis a model wrapped a header or section in. */
+function undecorate(text: string | undefined): string {
+  return (text ?? '')
+    .replace(/^[ \t]*(?:[*_#>+-]+[ \t]*)+/, '')
+    .replace(/(?:[ \t]*[*_#>+-]+)+[ \t]*$/, '')
+    .trim();
+}
+
 export function parseBrief(
   room: Room,
   raw: string,
@@ -301,24 +325,25 @@ export function parseBrief(
   const text = raw.trim();
   const perSeat: Record<string, string> = {};
 
-  const agendaMatch = /AGENDA:\s*([\s\S]*?)(?=\n\s*(?:FOR\s+|NOTES:)|$)/i.exec(text);
+  const agendaMatch = new RegExp(String.raw`AGENDA:\s*([\s\S]*?)` + SECTION_END, 'i').exec(text);
   const notesMatch = /NOTES:\s*([\s\S]*)$/i.exec(text);
 
   for (const seat of room.seats.filter((s) => s.enabled)) {
     // Seat names can contain regex metacharacters, so escape before matching.
     const escaped = seat.name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
     const pattern = new RegExp(
-      `FOR\\s+${escaped}\\s*:\\s*([\\s\\S]*?)(?=\\n\\s*(?:FOR\\s+|NOTES:)|$)`,
+      String.raw`FOR\s+${escaped}\s*:\s*([\s\S]*?)` + SECTION_END,
       'i',
     );
     const match = pattern.exec(text);
-    if (match?.[1]?.trim()) perSeat[seat.id] = match[1].trim();
+    const body = undecorate(match?.[1]);
+    if (body) perSeat[seat.id] = body;
   }
 
-  const notes = notesMatch?.[1]?.trim();
+  const notes = undecorate(notesMatch?.[1]);
   return {
     // If the format was ignored entirely, the whole reply is still a usable brief.
-    agenda: agendaMatch?.[1]?.trim() || text,
+    agenda: undecorate(agendaMatch?.[1]) || text,
     perSeat,
     notes: notes && !/^none\.?$/i.test(notes) ? notes : undefined,
   };
